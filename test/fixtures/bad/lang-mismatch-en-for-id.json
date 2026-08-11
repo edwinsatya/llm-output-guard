@@ -1,0 +1,12 @@
+{
+  "id": "lang-mismatch-en-for-id",
+  "category": "lang-mismatch",
+  "note": "Asked in Indonesian, answered in English.",
+  "text": "The candidate should be asked about their experience with state management and how they decide when a component needs to be split, and it is worth probing whether they understand the tradeoffs of the approach that they have chosen in the past.",
+  "options": {
+    "expectLang": "id"
+  },
+  "expect": [
+    "LANG_MISMATCH"
+  ]
+}

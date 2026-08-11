@@ -1,0 +1,9 @@
+{
+  "id": "empty-fence",
+  "category": "empty",
+  "note": "Opened and closed a code fence with nothing inside.",
+  "text": "```json\n```",
+  "expect": [
+    "EMPTY"
+  ]
+}

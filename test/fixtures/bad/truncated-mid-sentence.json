@@ -1,0 +1,12 @@
+{
+  "id": "truncated-mid-sentence",
+  "category": "truncated",
+  "note": "Hit the token ceiling mid-clause.",
+  "text": "The candidate demonstrates solid familiarity with distributed caching, and in particular their use of Redis for session state suggests they have thought carefully about the tradeoffs between",
+  "options": {
+    "maxTruncation": 0.5
+  },
+  "expect": [
+    "TRUNCATED"
+  ]
+}

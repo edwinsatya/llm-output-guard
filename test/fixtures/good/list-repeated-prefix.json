@@ -1,0 +1,5 @@
+{
+  "id": "list-repeated-prefix",
+  "note": "TRAP: every line starts identically. A naive n-gram check flags this.",
+  "text": "Pertanyaan yang bisa diajukan:\n\n1. Bagaimana kamu menentukan kapan sebuah komponen perlu dipecah?\n2. Bagaimana kamu menangani race condition di sisi klien?\n3. Bagaimana kamu memutuskan antara server component dan client component?\n4. Bagaimana kamu mengukur dampak perubahan terhadap performa?\n5. Bagaimana kamu menangani error dari pihak ketiga yang tidak stabil?"
+}

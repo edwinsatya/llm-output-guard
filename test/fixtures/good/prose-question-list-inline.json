@@ -1,0 +1,5 @@
+{
+  "id": "prose-question-list-inline",
+  "note": "Questions inline rather than as a list.",
+  "text": "A few things worth probing: how they decide when to reach for a cache, whether they have dealt with invalidation in anger, and what their instinct is when a third-party API starts degrading rather than failing outright. That last one separates people who have run something in production from people who have only built it."
+}

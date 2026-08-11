@@ -1,0 +1,5 @@
+{
+  "id": "prose-en-technical-explanation",
+  "note": "Normal English answer.",
+  "text": "Circuit breakers work by tracking consecutive failures against a threshold. Once that threshold is crossed the breaker opens and subsequent calls fail immediately, without touching the downstream service. After a cooldown window the breaker moves to a half-open state and allows a single trial request through. If that request succeeds the breaker closes again; if it fails, the cooldown restarts."
+}

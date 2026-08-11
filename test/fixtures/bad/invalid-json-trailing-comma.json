@@ -1,0 +1,12 @@
+{
+  "id": "invalid-json-trailing-comma",
+  "category": "invalid-json",
+  "note": "Almost valid. Trailing comma kills the parse.",
+  "text": "{ \"score\": 8, \"notes\": \"solid\", }",
+  "options": {
+    "expectJson": true
+  },
+  "expect": [
+    "INVALID_JSON"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "id": "empty-whitespace",
+  "category": "empty",
+  "note": "Whitespace only.",
+  "text": "   \n\n\t  \n ",
+  "expect": [
+    "EMPTY"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "truncated-open-fence",
+  "category": "truncated",
+  "note": "Unbalanced code fence -- the classic streaming cutoff.",
+  "text": "Here is the implementation you asked for:\n\n```ts\nexport function retry(fn: () => Promise<string>) {\n  return fn().catch(() => fn());",
+  "options": {
+    "maxTruncation": 0.5
+  },
+  "expect": [
+    "TRUNCATED"
+  ]
+}

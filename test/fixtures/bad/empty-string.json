@@ -1,0 +1,9 @@
+{
+  "id": "empty-string",
+  "category": "empty",
+  "note": "Provider returned 200 with an empty content block.",
+  "text": "",
+  "expect": [
+    "EMPTY"
+  ]
+}

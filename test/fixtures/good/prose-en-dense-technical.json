@@ -1,0 +1,5 @@
+{
+  "id": "prose-en-dense-technical",
+  "note": "Long, information-dense, no repetition.",
+  "text": "The failure mode was subtle because every layer reported success. The provider returned 200, the SDK parsed the envelope without complaint, and the response had non-zero length, so the retry policy saw nothing worth acting on. What it did not check was whether the content meant anything. By the time the degradation surfaced it looked like a latency problem, because the queue behind the retries had grown deep enough to dominate the trace."
+}

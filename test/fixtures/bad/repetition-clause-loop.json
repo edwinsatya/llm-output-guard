@@ -1,0 +1,9 @@
+{
+  "id": "repetition-clause-loop",
+  "category": "repetition",
+  "note": "Classic degenerate loop. This is the shape the gemma retry storm produced.",
+  "text": "The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React.",
+  "expect": [
+    "REPETITION"
+  ]
+}

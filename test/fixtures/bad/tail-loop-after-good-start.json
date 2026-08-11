@@ -1,0 +1,9 @@
+{
+  "id": "tail-loop-after-good-start",
+  "category": "tail-loop",
+  "note": "First half is fine, then it falls into a loop. Whole-output repetition scores low here.",
+  "text": "Based on the repositories, this candidate works primarily in TypeScript with a focus on frontend architecture. They have shipped several production applications and show comfort with server-side rendering, state management, and API design across a range of project sizes and problem domains they encountered.\n\nPlease describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing.",
+  "expect": [
+    "TAIL_LOOP"
+  ]
+}

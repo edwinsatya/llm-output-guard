@@ -1,0 +1,5 @@
+{
+  "id": "prose-numeric-report",
+  "note": "Numbers and units repeat naturally.",
+  "text": "Latency across the sample: p50 was 640ms, p90 was 1420ms, p99 was 3800ms. The p99 figure is dominated by cold starts on the serverless side rather than by model time, which we confirmed by splitting the trace into queue time and inference time."
+}

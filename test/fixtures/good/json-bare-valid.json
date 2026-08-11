@@ -1,0 +1,13 @@
+{
+  "id": "json-bare-valid",
+  "note": "Valid bare JSON.",
+  "text": "{\"score\":8,\"notes\":\"Strong frontend signal, thin on testing.\",\"followUp\":[\"Ask about integration tests\"]}",
+  "options": {
+    "expectJson": true,
+    "requiredKeys": [
+      "score",
+      "notes",
+      "followUp"
+    ]
+  }
+}

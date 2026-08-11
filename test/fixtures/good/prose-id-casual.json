@@ -1,0 +1,5 @@
+{
+  "id": "prose-id-casual",
+  "note": "Casual Indonesian register.",
+  "text": "Jujur aja, buat kasus lo mendingan jangan pakai ORM dulu. Query-nya masih sederhana, dan begitu lo butuh optimasi, ORM justru bikin lo susah lihat apa yang sebenarnya dieksekusi. Nanti kalau tabelnya udah belasan dan relasinya mulai ribet, baru pertimbangkan lagi."
+}

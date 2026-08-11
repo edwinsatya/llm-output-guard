@@ -1,0 +1,9 @@
+{
+  "id": "repetition-bullet-clone",
+  "category": "repetition",
+  "note": "Identical bullet repeated. Distinct from a real list, where items differ.",
+  "text": "- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.\n- Strong problem solving skills demonstrated across projects.",
+  "expect": [
+    "REPETITION"
+  ]
+}

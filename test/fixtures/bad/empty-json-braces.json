@@ -1,0 +1,10 @@
+{
+  "id": "empty-json-braces",
+  "category": "empty",
+  "note": "Empty JSON envelope where content was expected.",
+  "text": "{}",
+  "expect": [
+    "EMPTY",
+    "INVALID_JSON"
+  ]
+}

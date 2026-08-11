@@ -1,0 +1,5 @@
+{
+  "id": "prose-id-interview-feedback",
+  "note": "Normal Indonesian answer.",
+  "text": "Berdasarkan repositori yang tersedia, kandidat ini terlihat nyaman bekerja dengan TypeScript dan React. Ada beberapa proyek yang menunjukkan pemahaman soal arsitektur frontend, terutama dalam pemisahan komponen dan pengelolaan state. Yang menarik, dia juga sempat menyentuh sisi backend lewat Express dan PostgreSQL, jadi wawancaranya bisa diarahkan ke pertanyaan lintas layer."
+}

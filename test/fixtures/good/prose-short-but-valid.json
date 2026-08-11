@@ -1,0 +1,5 @@
+{
+  "id": "prose-short-but-valid",
+  "note": "Short answer that is nonetheless correct and complete.",
+  "text": "Yes, Redis pub/sub is the right primitive for that fan-out."
+}

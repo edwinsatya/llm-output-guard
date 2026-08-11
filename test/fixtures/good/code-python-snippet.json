@@ -1,0 +1,5 @@
+{
+  "id": "code-python-snippet",
+  "note": "TRAP: indentation-heavy, ends on a fence.",
+  "text": "Try this:\n\n```python\ndef repetition_score(text, n=3):\n    words = text.lower().split()\n    if len(words) < n * 4:\n        return 0.0\n    grams = {tuple(words[i:i+n]) for i in range(len(words) - n + 1)}\n    return 1 - len(grams) / (len(words) - n + 1)\n```"
+}

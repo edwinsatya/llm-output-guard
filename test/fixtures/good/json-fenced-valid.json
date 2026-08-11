@@ -1,0 +1,13 @@
+{
+  "id": "json-fenced-valid",
+  "note": "Valid JSON inside a fence -- common and acceptable.",
+  "text": "```json\n{\n  \"score\": 6,\n  \"notes\": \"Mixed signal.\",\n  \"followUp\": []\n}\n```",
+  "options": {
+    "expectJson": true,
+    "requiredKeys": [
+      "score",
+      "notes",
+      "followUp"
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "id": "too-short-fragment",
+  "category": "too-short",
+  "note": "Technically non-empty, uselessly short for the ask.",
+  "text": "Ok.",
+  "options": {
+    "minLength": 40
+  },
+  "expect": [
+    "TOO_SHORT"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "invalid-json-prose-wrapper",
+  "category": "invalid-json",
+  "note": "Model chatted around the payload instead of emitting bare JSON.",
+  "text": "Sure! Here is the JSON you requested:\n\n{ \"score\": 8, \"notes\": \"solid\" }\n\nLet me know if you need anything else.",
+  "options": {
+    "expectJson": true
+  },
+  "expect": [
+    "INVALID_JSON"
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "id": "json-array-valid",
+  "note": "Top-level array, no required keys.",
+  "text": "[{\"q\":\"Explain hydration\"},{\"q\":\"Explain suspense boundaries\"}]",
+  "options": {
+    "expectJson": true
+  }
+}

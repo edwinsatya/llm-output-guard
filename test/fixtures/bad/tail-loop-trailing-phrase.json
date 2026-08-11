@@ -1,0 +1,9 @@
+{
+  "id": "tail-loop-trailing-phrase",
+  "category": "tail-loop",
+  "note": "Ends mid-answer with a phrase stuck on repeat until the token ceiling.",
+  "text": "Here are three questions tailored to the candidate profile that we generated from their public repository history and commit patterns.\n\n1. How do you decide when to introduce a state management library?\n\nand so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth and so on and so forth",
+  "expect": [
+    "TAIL_LOOP"
+  ]
+}

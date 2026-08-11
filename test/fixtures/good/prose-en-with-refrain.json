@@ -1,0 +1,5 @@
+{
+  "id": "prose-en-with-refrain",
+  "note": "TRAP: deliberate rhetorical repetition, which is legitimate writing.",
+  "text": "It is not a framework problem. It is not a language problem. It is not even a scaling problem. What you are looking at is a design problem, and no amount of infrastructure will paper over it. The queue you added last quarter moved the symptom rather than removing it, and the retry logic you added on top moved it again."
+}

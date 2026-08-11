@@ -1,0 +1,60 @@
+{
+  "name": "llm-output-guard",
+  "version": "0.1.0",
+  "description": "Detect degenerate LLM output that arrives with a 200 OK. Zero dependencies, deterministic, composes with any retry or fallback layer.",
+  "keywords": [
+    "llm",
+    "ai",
+    "reliability",
+    "fallback",
+    "retry",
+    "resilience",
+    "degenerate",
+    "guardrails",
+    "validation"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "calibrate": "tsx scripts/calibrate.ts",
+    "seed": "node scripts/seed-fixtures.mjs",
+    "prepublishOnly": "npm run typecheck && npm run test && npm run build"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/edwinsatya/llm-output-guard.git"
+  },
+  "homepage": "https://github.com/edwinsatya/llm-output-guard#readme",
+  "bugs": {
+    "url": "https://github.com/edwinsatya/llm-output-guard/issues"
+  },
+  "author": "Edwin Satya Yudistira"
+}

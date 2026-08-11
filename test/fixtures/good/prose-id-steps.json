@@ -1,0 +1,5 @@
+{
+  "id": "prose-id-steps",
+  "note": "Numbered steps with varied content.",
+  "text": "Langkahnya begini:\n\n1. Kumpulkan dulu contoh output yang rusak dari log produksi.\n2. Beri label tiap contoh sesuai jenis kerusakannya.\n3. Baru tulis detector pertama, dan uji langsung ke koleksi tadi.\n4. Setel ambang batas berdasarkan angka nyata, bukan tebakan."
+}

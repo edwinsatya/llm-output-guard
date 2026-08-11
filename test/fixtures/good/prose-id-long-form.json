@@ -1,0 +1,5 @@
+{
+  "id": "prose-id-long-form",
+  "note": "Long Indonesian prose with recurring domain terms.",
+  "text": "Untuk sistem antrean pesanan, hal pertama yang perlu diputuskan adalah apakah pesanan diproses secara sinkron atau asinkron. Kalau sinkron, pengguna menunggu sampai seluruh proses selesai, dan itu membuat pengalaman terasa lambat ketika beban tinggi. Kalau asinkron, pesanan masuk ke antrean lalu diproses di belakang layar, dan pengguna langsung mendapat konfirmasi. Pendekatan kedua lebih tahan beban, tetapi menuntut penanganan kegagalan yang lebih hati-hati. Setiap pesanan yang gagal harus bisa dicoba ulang tanpa menimbulkan duplikasi, dan itu berarti setiap pesanan perlu identitas yang unik sejak awal."
+}

@@ -1,0 +1,5 @@
+{
+  "id": "prose-en-tradeoff",
+  "note": "Balanced analytical answer.",
+  "text": "Both options are defensible. Server-side rendering gives you a faster first paint and better crawlability, at the cost of a warmer server and a more complex cache story. Client-side rendering inverts that. The deciding factor is usually who your traffic is, not which approach is technically superior."
+}

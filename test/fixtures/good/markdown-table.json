@@ -1,0 +1,5 @@
+{
+  "id": "markdown-table",
+  "note": "TRAP: pipes and dashes look like low-entropy noise.",
+  "text": "| Provider | Median latency | Failure rate |\n| --- | --- | --- |\n| Gemini | 820ms | 0.4% |\n| Groq | 310ms | 1.2% |\n| Local | 2100ms | 0.0% |\n\nGroq is fastest but least reliable, which is exactly why it belongs second in the chain rather than first."
+}

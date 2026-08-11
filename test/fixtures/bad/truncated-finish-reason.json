@@ -1,0 +1,13 @@
+{
+  "id": "truncated-finish-reason",
+  "category": "truncated",
+  "note": "Provider told us directly. Ground truth beats heuristics.",
+  "text": "A complete and perfectly well formed sentence that ends properly.",
+  "options": {
+    "maxTruncation": 0.5,
+    "finishReason": "length"
+  },
+  "expect": [
+    "TRUNCATED"
+  ]
+}

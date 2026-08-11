@@ -1,0 +1,5 @@
+{
+  "id": "code-block-typescript",
+  "note": "TRAP: code repeats syntax heavily and ends on a brace.",
+  "text": "Here is the wrapper:\n\n```ts\nexport async function withFallback<T>(fns: Array<() => Promise<T>>): Promise<T> {\n  let last: unknown;\n  for (const fn of fns) {\n    try {\n      return await fn();\n    } catch (err) {\n      last = err;\n    }\n  }\n  throw last;\n}\n```\n\nIt tries each function in order and rethrows the final error if all of them fail."
+}

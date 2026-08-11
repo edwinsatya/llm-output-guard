@@ -1,0 +1,5 @@
+{
+  "id": "prose-mixed-code-terms",
+  "note": "TRAP: dense identifier repetition in technical prose.",
+  "text": "The checkOutput function calls repetitionScore, tailLoopScore, and compressibilityScore in sequence. repetitionScore looks at duplicate n-grams across the whole response, while tailLoopScore restricts itself to the trailing window. compressibilityScore approaches the same question from the character level, which lets it catch collapses that never form words at all."
+}

@@ -1,0 +1,17 @@
+{
+  "id": "invalid-json-missing-keys",
+  "category": "invalid-json",
+  "note": "Parses fine but is missing half the contract.",
+  "text": "{ \"score\": 8 }",
+  "options": {
+    "expectJson": true,
+    "requiredKeys": [
+      "score",
+      "notes",
+      "followUp"
+    ]
+  },
+  "expect": [
+    "INVALID_JSON"
+  ]
+}

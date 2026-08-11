@@ -1,0 +1,9 @@
+{
+  "id": "low-entropy-charspam",
+  "category": "low-entropy",
+  "note": "Character-level collapse with no word boundaries for n-grams to catch.",
+  "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "expect": [
+    "LOW_ENTROPY"
+  ]
+}

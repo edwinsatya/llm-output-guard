@@ -1,0 +1,9 @@
+{
+  "id": "empty-punctuation",
+  "category": "empty",
+  "note": "A lone punctuation mark. Passes a naive truthiness check.",
+  "text": "...",
+  "expect": [
+    "EMPTY"
+  ]
+}
