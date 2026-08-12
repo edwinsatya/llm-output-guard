@@ -215,6 +215,50 @@ They are starting points calibrated against the fixture corpus in this repo — 
 
 ---
 
+## Calibrating against your own traffic
+
+The shipped presets are tuned on the fixture corpus, which is not your traffic.
+Log your scores for a week, then let the CLI read them back:
+
+```bash
+npx llm-output-guard calibrate scores.jsonl
+# or:  cat scores.jsonl | npx llm-output-guard calibrate --fpr 0.001
+```
+
+```
+8,000 verdicts — flagging budget 0.10% of traffic
+! sample is too small for a 0.10% rate: it rests on the top ~8 scores, and
+  ~10,000 verdicts are needed before that tail means anything
+
+REPETITION   n=7,993
+  p50 0.000   p90 0.000   p99 0.100   p99.9 0.944   max 0.991
+  gap 0.114 -> 0.705  (15 above, 0.19% of traffic)
+  suggest maxRepetition: 0.409
+
+TAIL_LOOP   n=7,993
+  p50 0.000   p90 0.000   p99 0.000   p99.9 0.000   max 0.789
+  gap 0.000 -> 0.789  (1 above, 0.01% of traffic)
+  suggest maxTailLoop: 0.394
+    ! the separation rests on 1 sample; treat it as a lead to confirm, not a
+      calibrated threshold
+```
+
+Input is JSONL and the parsing is deliberately forgiving — a bare scores
+object, a whole `Verdict`, or either of those buried in a wider log record all
+work, because a calibration step you have to reshape your logs for is one you
+will not run. `--json` emits the same analysis as data.
+
+**What it can and cannot tell you.** The corpus can compute a real margin
+because every fixture is labelled. Your logs are not, and no arithmetic
+recovers a label that was never written down. So these numbers bound *false
+positives* — how much of your own traffic a threshold would flag — on the
+assumption that degeneration is rare in it. They say nothing about what a
+threshold catches; a detector that never fires has a perfect false-positive
+rate. The `gap` line is the exception worth trusting, because a hole between
+the bulk and a cluster of outliers is real separation observed in your data
+rather than an assumption about rarity — and when that hole rests on one or
+two samples, the report says so.
+
 ## On thresholds
 
 A miss is annoying. **A false positive is worse**: a healthy response gets discarded and retried against a slower provider for nothing.

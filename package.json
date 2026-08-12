@@ -1,6 +1,6 @@
 {
   "name": "llm-output-guard",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Detect degenerate LLM output that arrives with a 200 OK. Zero dependencies, deterministic, composes with any retry or fallback layer.",
   "keywords": [
     "llm",
@@ -31,6 +31,9 @@
       "require": "./dist/ai-sdk.cjs"
     },
     "./package.json": "./package.json"
+  },
+  "bin": {
+    "llm-output-guard": "./dist/cli.js"
   },
   "files": [
     "dist"

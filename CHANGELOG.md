@@ -1,5 +1,38 @@
 # llm-output-guard
 
+## 0.4.0
+
+### Minor Changes
+
+- Add `npx llm-output-guard calibrate` — thresholds derived from your own logs.
+
+  The README has always said to log your scores for a week and then set your own
+  thresholds, without shipping anything that does the second half. This closes
+  that: point it at JSONL of logged verdicts and it reports each detector's
+  distribution and a suggested threshold. Parsing is deliberately forgiving —
+  a bare scores object, a whole `Verdict`, or either buried in a wider log
+  record — because a calibration step you must reshape your logs for is one
+  nobody runs. `--json` emits the analysis as data, and the same functions are
+  exported (`calibrate`, `summarise`, `percentile`, `findGap`) for building your
+  own reporting on top.
+
+  Most of the design is about not overstating what unlabelled logs can support:
+
+  - Suggestions bound **false positives**, not misses, and the report says so.
+    A detector that never fires has a perfect false-positive rate.
+  - When the tail is genuinely bimodal, the gap between the healthy bulk and the
+    outlier cluster is preferred over a percentile, because it is separation
+    observed in your data rather than an assumption about rarity — and if that
+    gap rests on fewer than five samples, it is labelled a lead to confirm.
+  - Asking for a rate the sample cannot support is reported rather than answered:
+    a 0.1% threshold needs ~10,000 verdicts before its tail means anything.
+  - `EMPTY` and `TOO_SHORT` are reported as incidence rates instead of
+    thresholds, since one is not configurable and the other is set in characters
+    — a 0..1 suggestion there would be a confidently wrong number in the
+    right-looking place.
+
+  `Distribution` gains a `nonZero` count. Still zero runtime dependencies.
+
 ## 0.3.0
 
 ### Minor Changes
