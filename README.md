@@ -76,6 +76,69 @@ const verdict = checkOutput(raw, {
 if (verdict.ok) use(verdict.json); // already parsed, fence stripped
 ```
 
+### Streaming, where it stops costing you tokens
+
+Checking a finished response tells you that you already paid for it. A model
+that starts looping keeps looping until `max_tokens`, and you are billed for
+every one of those tokens and made to wait for them.
+
+`guardStream` watches the response as it arrives and tells you the moment it
+goes wrong, so you can abort the generation instead of buying the rest of it:
+
+```ts
+import { guardStream, presets } from 'llm-output-guard';
+
+const controller = new AbortController();
+const stream = await callModel(prompt, { signal: controller.signal });
+
+for await (const chunk of guardStream(stream, {
+  ...presets.chat,
+  onDegenerate: (verdict) => {
+    console.warn('model started looping', verdict.reasons);
+    controller.abort();
+  },
+})) {
+  process.stdout.write(chunk);
+}
+```
+
+Against the degenerate fixtures, aborting on the first failed check ends the
+generation after **8-52%** of the tokens the model would otherwise have
+produced:
+
+```
+repetition-word-stutter        caught at  240/2999 chars ->  92% never generated
+repetition-clause-loop         caught at  240/1680 chars ->  86% never generated
+tail-loop-after-good-start     caught at  640/1569 chars ->  59% never generated
+tail-loop-trailing-phrase      caught at  640/1238 chars ->  48% never generated
+```
+
+Zero of the healthy fixtures trip it, and the watching costs **~0.05ms per
+check** — around 0.7ms across a 5,500 character response, flat as the stream
+grows rather than quadratic in its length.
+
+For manual control over the loop, use the primitive:
+
+```ts
+const guard = createStreamGuard(presets.chat);
+
+for await (const chunk of stream) {
+  const verdict = guard.push(chunk); // null until a check actually runs
+  if (verdict && !verdict.ok) break;
+  yield chunk;
+}
+
+const final = guard.end(finishReason); // full check, all detectors
+```
+
+**What runs when.** Mid-stream only the redundancy detectors are meaningful:
+partial output is genuinely short, genuinely cut off, and genuinely not valid
+JSON, so `TOO_SHORT`, `TRUNCATED`, `INVALID_JSON` and `LANG_MISMATCH` would
+fire on every healthy generation and teach you to ignore the guard. They are
+deferred to `end()`. `LOW_ENTROPY` is deferred too, for cost — it is ~100x the
+other detectors, and everything it would have caught early is caught by
+`REPETITION` anyway.
+
 ---
 
 ## The verdict

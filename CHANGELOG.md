@@ -1,5 +1,32 @@
 # llm-output-guard
 
+## 0.2.0
+
+### Minor Changes
+
+- Add streaming detection: `guardStream` and `createStreamGuard`.
+
+  Checking a finished response only tells you that you already paid for it. A
+  model that starts looping keeps going until `max_tokens`, billing you for every
+  token and making you wait. These watch the response as it arrives and report
+  degeneration early enough to abort the generation — 48-92% of the tokens on the
+  degenerate fixtures, with none of the healthy ones tripping.
+
+  Two things make it safe to leave on:
+
+  - **Only the redundancy detectors run mid-stream.** Partial output really is
+    short, really is cut off, and really is invalid JSON, so `TOO_SHORT`,
+    `TRUNCATED`, `INVALID_JSON` and `LANG_MISMATCH` would fire on every healthy
+    generation. They are deferred to `end()`, which runs the full check.
+  - **Each check reads a trailing window, not the whole buffer**, so cost is
+    ~0.05ms per check and flat as the stream grows rather than quadratic in its
+    length. `LOW_ENTROPY` is deferred as well — at ~100x the cost of the other
+    detectors it is affordable once per response and ruinous per check, and
+    everything it catches early is caught by `REPETITION` regardless.
+
+  The guard never aborts anything itself: it holds no `AbortController` and knows
+  nothing about your transport. It tells you, and you decide.
+
 ## 0.1.1
 
 ### Patch Changes
