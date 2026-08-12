@@ -1,5 +1,29 @@
 # llm-output-guard
 
+## 0.3.0
+
+### Minor Changes
+
+- Add `llm-output-guard/ai-sdk`: `outputGuard()`, middleware for the Vercel AI SDK.
+
+  One `wrapLanguageModel` call guards both `generateText` and `streamText`. On a
+  stream it cancels the provider mid-generation — driven through the real SDK
+  against a looping model, the provider was asked for 17 of 137 parts before the
+  guard cut it off, and the rest was never generated or billed. On `generateText`
+  the tokens are already spent, so it throws `DegenerateOutputError` instead.
+
+  `onDegenerate` takes `'throw'` (default; also cancels the stream), `'abort'`
+  (stop cleanly, keep what arrived) or `'ignore'`, and `onVerdict` reports every
+  verdict either way, so a logging-only rollout is the default posture rather than
+  an afterthought.
+
+  `ai` is an optional peer dependency and the adapter is structurally typed rather
+  than importing from it, so the package still has zero runtime dependencies and
+  the main entry point still has no peers. `finishReason` is accepted as both the
+  v2 string and the v4 `{ unified, raw }` object, so one adapter covers both specs.
+
+  Also adds the `./package.json` export, which some tooling reads.
+
 ## 0.2.0
 
 ### Minor Changes

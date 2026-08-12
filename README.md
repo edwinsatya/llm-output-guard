@@ -131,6 +131,42 @@ for await (const chunk of stream) {
 const final = guard.end(finishReason); // full check, all detectors
 ```
 
+### Vercel AI SDK
+
+One wrap, and both `generateText` and `streamText` are guarded:
+
+```ts
+import { wrapLanguageModel } from 'ai';
+import { outputGuard } from 'llm-output-guard/ai-sdk';
+import { presets } from 'llm-output-guard';
+
+const model = wrapLanguageModel({
+  model: groq('llama-3.3-70b-versatile'),
+  middleware: outputGuard({ ...presets.chat, onDegenerate: 'abort' }),
+});
+```
+
+On `streamText` this cancels the provider's stream mid-generation. Driven
+through the real SDK against a looping model, the provider was asked for **17
+of 137 parts** before the guard cut it off — the rest was never generated and
+never billed. On `generateText` the tokens are already bought, so it throws
+`DegenerateOutputError` instead, which your fallback layer can act on.
+
+`onDegenerate` takes `'throw'` (default, also cancels the stream), `'abort'`
+(stop cleanly, keep what arrived), or `'ignore'`. Start with `'ignore'` plus
+`onVerdict` to watch your own traffic before letting a threshold fail anything:
+
+```ts
+outputGuard({
+  ...presets.chat,
+  onDegenerate: 'ignore',
+  onVerdict: (verdict, { streaming }) => metrics.record(verdict.scores, { streaming }),
+});
+```
+
+`ai` is an **optional peer dependency** — importing the subpath does not pull it
+in, and the main entry point has no peers at all.
+
 **What runs when.** Mid-stream only the redundancy detectors are meaningful:
 partial output is genuinely short, genuinely cut off, and genuinely not valid
 JSON, so `TOO_SHORT`, `TRUNCATED`, `INVALID_JSON` and `LANG_MISMATCH` would

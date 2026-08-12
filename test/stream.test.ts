@@ -122,19 +122,34 @@ describe('createStreamGuard', () => {
   });
 
   /*
-   * Without the trailing window each check re-scans the whole buffer, making
-   * a stream quadratic in its own length. Cost per check must not grow.
+   * The observable consequence of the trailing window, tested without a clock.
+   *
+   * Measured across the whole buffer, a loop arriving after several healthy
+   * paragraphs is diluted below every threshold -- the longer the good prefix,
+   * the more thoroughly it hides the bad suffix. A windowed check sees only
+   * recent text, so the prefix cannot vote.
    */
-  it('keeps per-check cost flat as the stream grows', () => {
-    const cost = (multiplier: number) => {
-      const text = HEALTHY.repeat(multiplier);
-      const guard = createStreamGuard(presets.chat);
-      const started = performance.now();
-      collect(guard, text, 16);
-      return (performance.now() - started) / Math.max(1, guard.checks);
-    };
-    cost(2); // warm the JIT so the first measurement is not the slow one
-    expect(cost(16)).toBeLessThan(cost(2) * 4);
+  it('still catches a loop that starts after a long healthy prefix', () => {
+    const text = HEALTHY.repeat(6) + ' ' + 'You should add tests to this repo. '.repeat(40);
+    const guard = createStreamGuard(presets.chat);
+    const failed = collect(guard, text, 16).filter((v) => !v.ok);
+    expect(failed.length).toBeGreaterThan(0);
+  });
+
+  /*
+   * Without the window each check re-scans the whole buffer, so a stream costs
+   * quadratic work in its own length: the pre-window implementation took 94ms
+   * on 5.5k characters, which extrapolates past six seconds here. The budget
+   * is deliberately loose -- this catches a return to quadratic, not a
+   * regression of a few milliseconds, so it does not flake on a loaded runner.
+   */
+  it('does not degrade to quadratic work on a long stream', () => {
+    const text = HEALTHY.repeat(80); // ~30k characters
+    const guard = createStreamGuard(presets.chat);
+    const started = performance.now();
+    collect(guard, text, 16);
+    expect(guard.checks).toBeGreaterThan(20);
+    expect(performance.now() - started).toBeLessThan(2000);
   });
 });
 
