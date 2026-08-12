@@ -243,19 +243,16 @@ export async function main(argv: string[]): Promise<number> {
   return report(text, fpr, asJson);
 }
 
-/* c8 ignore start -- entry point, exercised by the CLI tests through main() */
-const invokedDirectly =
-  process.argv[1] && /llm-output-guard[/\\]dist[/\\]cli|cli\.(ts|js|cjs)$/.test(process.argv[1]);
-
-if (invokedDirectly) {
-  main(process.argv).then(
-    (code) => {
-      process.exitCode = code;
-    },
-    (error) => {
-      process.stderr.write(`${(error as Error).message}\n`);
-      process.exitCode = 1;
-    },
-  );
-}
-/* c8 ignore stop */
+/*
+ * No self-invocation check lives here on purpose.
+ *
+ * There was one, and it sniffed `process.argv[1]` to decide whether it was
+ * being run rather than imported. Through npm's bin symlink that path is
+ * `node_modules/.bin/llm-output-guard` -- no extension, no `dist/cli` -- so
+ * the check said "imported", `main` never ran, and the CLI printed nothing
+ * and exited 0. It worked every way it was tested except the only way users
+ * invoke it.
+ *
+ * The executable is `bin.ts`, which does nothing but call `main`. This file
+ * stays a plain module, so there is no condition left to get wrong.
+ */

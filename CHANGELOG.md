@@ -1,5 +1,31 @@
 # llm-output-guard
 
+## 0.4.1
+
+### Patch Changes
+
+- Fix `npx llm-output-guard` printing nothing.
+
+  The 0.4.0 binary did nothing at all and exited 0. The entry point decided
+  whether it was being run or imported by matching `process.argv[1]` against
+  `dist/cli` or a `.js` suffix — and npm invokes a bin through a symlink at
+  `node_modules/.bin/llm-output-guard`, which has neither. The check concluded it
+  had been imported, `main` never ran, and there was no error to notice.
+
+  `node dist/cli.js` worked, which is how it passed every check before release.
+  The executable is now `dist/bin.js`, a file whose only content is a call to
+  `main` — a module that is only ever an entry point does not need to ask whether
+  it is one, so there is no condition left to get wrong.
+
+  Adds subprocess tests that spawn the CLI the way a user runs it, including
+  through stdin. In-process tests of `main` cannot catch this class of bug, and
+  did not.
+
+  Also brings `*.config.ts` into `tsconfig.json`'s `include`. The build config
+  sat outside it, so `tsc --noEmit` never read the file that decides what gets
+  built — a `format` typing error in `tsup.config.ts` was visible in an editor
+  and invisible to CI.
+
 ## 0.4.0
 
 ### Minor Changes
