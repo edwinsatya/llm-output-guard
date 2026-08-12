@@ -17,7 +17,9 @@ export interface CompressibilityOptions {
  * This is not a real compressor; it only needs to move monotonically
  * with redundancy, which is all the score requires.
  *
- * Healthy prose lands around 0.30-0.55. Degenerate output collapses toward 0.
+ * Measured against the fixture corpus: healthy output lands at 0.67-0.97,
+ * degenerate collapse at 0.007-0.042, and tail loops in between at 0.17-0.20.
+ * The gap either side of that middle band is what the pivot below trades on.
  */
 export function compressionRatio(text: string, options: CompressibilityOptions = {}): number {
   const { window = 1024, maxSample = 4000, minMatch = 4 } = options;
@@ -46,6 +48,14 @@ export function compressionRatio(text: string, options: CompressibilityOptions =
 /**
  * Suspicion score derived from {@link compressionRatio}.
  * `pivot` is the ratio treated as fully healthy; lower ratios scale up toward 1.
+ *
+ * At the default 0.32 every healthy fixture clamps to exactly 0, with the
+ * nearest one still twice the pivot away -- so this detector is deliberately
+ * tuned for outright entropy collapse and abstains on everything milder.
+ * Tail loops score 0.37-0.48 here and are left to `tailLoopScore`, which
+ * separates them far more cleanly (0.90 against a healthy max of 0.00).
+ * Raising the pivot would make this fire on loops too, buying redundant
+ * coverage with the margin that currently makes a false positive so unlikely.
  */
 export function compressibilityScore(
   text: string,

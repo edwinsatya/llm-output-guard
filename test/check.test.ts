@@ -50,6 +50,25 @@ describe('checkOutput', () => {
       expect(() => checkOutput(input, presets.chat)).not.toThrow();
     }
   });
+
+  /*
+   * The failure this package exists for includes the provider handing back no
+   * text at all. A TypeError here would escape the caller's retry predicate,
+   * which keys off DegenerateOutputError -- so a non-string must be a verdict.
+   */
+  it('treats a non-string response as EMPTY rather than throwing', () => {
+    for (const input of [null, undefined, 123, {}, [], NaN]) {
+      const v = checkOutput(input as unknown as string, presets.chat);
+      expect(v.ok).toBe(false);
+      expect(v.reasons.map((r) => r.code)).toEqual(['EMPTY']);
+      expect(v.scores.EMPTY).toBe(1);
+    }
+  });
+
+  it('names the offending type so the log says what arrived', () => {
+    expect(checkOutput(null).reasons[0].message).toContain('null');
+    expect(checkOutput(undefined).reasons[0].message).toContain('undefined');
+  });
 });
 
 describe('assertOutput', () => {

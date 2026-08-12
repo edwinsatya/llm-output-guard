@@ -1,6 +1,6 @@
 {
   "name": "llm-output-guard",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Detect degenerate LLM output that arrives with a 200 OK. Zero dependencies, deterministic, composes with any retry or fallback layer.",
   "keywords": [
     "llm",

@@ -32,8 +32,14 @@ const DEFAULTS: Required<
  *
  * Every detector runs even after one fails, so `reasons` shows the full picture
  * rather than whichever check happened to be ordered first.
+ *
+ * Never throws. A `null`, `undefined`, or otherwise non-string input is a
+ * verdict (`EMPTY`), not an exception -- see the guard below for why.
  */
-export function checkOutput(text: string, options: CheckOptions = {}): Verdict {
+export function checkOutput(
+  text: string | null | undefined,
+  options: CheckOptions = {},
+): Verdict {
   const opts = { ...DEFAULTS, ...options };
   const reasons: Reason[] = [];
   const scores: Partial<Record<ReasonCode, number>> = {};
@@ -43,6 +49,26 @@ export function checkOutput(text: string, options: CheckOptions = {}): Verdict {
     scores[code] = score;
     if (score > threshold) reasons.push({ code, score, threshold, message });
   };
+
+  /*
+   * A caller who has `undefined` where the text should be is in exactly the
+   * situation this package exists for: the request "succeeded" and produced
+   * nothing. Types do not stop it -- an SDK whose field is optional, a JSON
+   * envelope that shaped differently than documented, a `.content[0].text`
+   * that was never there. Throwing a TypeError here would be the worst
+   * possible answer, because it is not a DegenerateOutputError and so slips
+   * straight through the very retry predicate the README recommends.
+   */
+  if (typeof text !== 'string') {
+    scores.EMPTY = 1;
+    reasons.push({
+      code: 'EMPTY',
+      score: 1,
+      threshold: 0.5,
+      message: `Response was ${text === null ? 'null' : typeof text}, not a string.`,
+    });
+    return { ok: false, reasons, scores };
+  }
 
   const empty = emptinessScore(text);
   add('EMPTY', empty, 0.5, 'Response contains no usable content.');
@@ -123,8 +149,12 @@ export class DegenerateOutputError extends Error {
  * Throwing wrapper, for dropping straight into an existing retry or fallback
  * chain that already keys off thrown errors.
  */
-export function assertOutput(text: string, options: CheckOptions = {}): string {
+export function assertOutput(
+  text: string | null | undefined,
+  options: CheckOptions = {},
+): string {
   const verdict = checkOutput(text, options);
   if (!verdict.ok) throw new DegenerateOutputError(verdict);
-  return text;
+  // Unreachable for non-strings: those score EMPTY 1 and throw above.
+  return text as string;
 }
