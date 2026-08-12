@@ -8,7 +8,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { calibrate, type ScoreSample } from './calibrate.js';
-import type { ReasonCode } from './types.js';
+import type { ReasonCode, TokenMode } from './types.js';
 
 const CODES: ReasonCode[] = [
   'EMPTY',
@@ -39,6 +39,19 @@ const OPTION_FOR: Partial<Record<ReasonCode, string>> = {
   LANG_MISMATCH: 'maxLangMismatch',
 };
 
+/**
+ * Where a detector's char-mode scores set a different option. Suggesting
+ * `maxTailLoop` from a char-mode distribution would print the right-looking
+ * number against the wrong knob, and it would be applied to spaced-script
+ * traffic that never produced it.
+ */
+const CHAR_OPTION_FOR: Partial<Record<ReasonCode, string>> = {
+  TAIL_LOOP: 'maxCharTailLoop',
+};
+
+const optionFor = (code: ReasonCode, mode?: TokenMode): string | undefined =>
+  (mode === 'char' ? CHAR_OPTION_FOR[code] : undefined) ?? OPTION_FOR[code];
+
 /** Detectors reported by how often they fired rather than by threshold. */
 const RATE_ONLY: Partial<Record<ReasonCode, string>> = {
   EMPTY: 'not configurable — this is how often you served nothing at all',
@@ -56,9 +69,18 @@ export function extractScores(value: unknown): ScoreSample | null {
   if (!value || typeof value !== 'object') return null;
 
   const record = value as Record<string, unknown>;
+
+  /*
+   * On a Verdict, `modes` is a sibling of `scores` -- so by the time recursion
+   * reaches the object holding the numbers, the modes are one level up and
+   * already out of scope. Read them here and hand them down, so a verdict
+   * logged whole segments correctly and a bare scores object still works.
+   */
+  const modes = extractModes(record.modes);
+
   for (const nested of [record.scores, record.verdict, record.guard]) {
     const found = nested ? extractScores(nested) : null;
-    if (found) return found;
+    if (found) return modes && !found.modes ? { ...found, modes } : found;
   }
 
   const sample: ScoreSample = {};
@@ -70,8 +92,22 @@ export function extractScores(value: unknown): ScoreSample | null {
       hits += 1;
     }
   }
+  if (hits === 0) return null;
 
-  return hits > 0 ? sample : null;
+  if (modes) sample.modes = modes;
+  return sample;
+}
+
+/** The `modes` map off a logged verdict, keeping only values we recognise. */
+function extractModes(value: unknown): Partial<Record<ReasonCode, TokenMode>> | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Record<string, unknown>;
+  const modes: Partial<Record<ReasonCode, TokenMode>> = {};
+  for (const code of CODES) {
+    const mode = raw[code];
+    if (mode === 'word' || mode === 'char') modes[code] = mode;
+  }
+  return Object.keys(modes).length > 0 ? modes : null;
 }
 
 function parseLines(text: string): { samples: ScoreSample[]; skipped: number } {
@@ -123,7 +159,12 @@ Verdict, or a wider log record containing either all work:
 Log them with onVerdict:
 
   outputGuard({ ...presets.chat, onDegenerate: 'ignore',
-                onVerdict: (v) => log.info({ scores: v.scores }) })
+                onVerdict: (v) => log.info({ scores: v.scores, modes: v.modes }) })
+
+Include modes if your traffic is not all one script. TAIL_LOOP measured over
+words and over characters are different distributions, and this segments them
+into TAIL_LOOP [word] and TAIL_LOOP [char] so each gets its own threshold.
+Without it they are pooled, and the suggestion fits neither.
 `;
 
 const fmt = (n: number) => (Number.isFinite(n) ? n.toFixed(3) : '  -  ');
@@ -165,7 +206,9 @@ function report(text: string, fpr: number, asJson: boolean): number {
 
   for (const s of result.summaries) {
     const d = s.distribution;
-    out.push('', `${s.code}   n=${d.n.toLocaleString()}`);
+    // The mode is part of the identity of these numbers, not a footnote: the
+    // same code appears twice when traffic mixes scripts.
+    out.push('', `${s.code}${s.mode ? ` [${s.mode}]` : ''}   n=${d.n.toLocaleString()}`);
     out.push(
       `  p50 ${fmt(d.p50)}   p90 ${fmt(d.p90)}   p99 ${fmt(d.p99)}   ` +
         `p99.9 ${fmt(d.p999)}   max ${fmt(d.max)}`,
@@ -185,7 +228,7 @@ function report(text: string, fpr: number, asJson: boolean): number {
           `(${((d.nonZero / d.n) * 100).toFixed(2)}%) — ${rateOnly}`,
       );
     } else {
-      const option = OPTION_FOR[s.code];
+      const option = optionFor(s.code, s.mode);
       out.push(`  suggest ${option ? `${option}: ` : ''}${fmt(s.suggested)}`);
     }
 

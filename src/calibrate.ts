@@ -16,7 +16,7 @@
  * that never fires has a perfect false-positive rate. Every number here bounds
  * false positives only, and `Summary.caveats` says so wherever it matters.
  */
-import type { ReasonCode } from './types.js';
+import type { ReasonCode, TokenMode } from './types.js';
 
 export interface CalibrationOptions {
   /**
@@ -59,6 +59,15 @@ export interface Gap {
 
 export interface Summary {
   code: ReasonCode;
+  /**
+   * The tokenization mode these scores came from, when the samples recorded
+   * one. Summaries are segmented on it, because a detector with two modes
+   * produces two distributions and a threshold derived from their union is
+   * numerically wrong for both -- word-mode `TAIL_LOOP` on Indonesian traffic
+   * has a healthy max around 0.35 where char mode's is around 0.06, and one
+   * number cannot be a false-positive budget for both.
+   */
+  mode?: TokenMode;
   distribution: Distribution;
   /** Threshold that would flag `falsePositiveRate` of this sample. */
   suggested: number;
@@ -120,9 +129,9 @@ export function findGap(sorted: number[], minWidth = 0.15): Gap | null {
 export function summarise(
   code: ReasonCode,
   scores: number[],
-  options: CalibrationOptions = {},
+  options: CalibrationOptions & { mode?: TokenMode } = {},
 ): Summary {
-  const { falsePositiveRate = 0.001 } = options;
+  const { falsePositiveRate = 0.001, mode } = options;
   const sorted = [...scores].sort((a, b) => a - b);
   const n = sorted.length;
 
@@ -191,11 +200,24 @@ export function summarise(
     );
   }
 
-  return { code, distribution, suggested: Number(suggested.toFixed(3)), gap, caveats };
+  return {
+    code,
+    ...(mode && { mode }),
+    distribution,
+    suggested: Number(suggested.toFixed(3)),
+    gap,
+    caveats,
+  };
 }
 
-/** One logged verdict's worth of scores. */
-export type ScoreSample = Partial<Record<ReasonCode, number>>;
+/**
+ * One logged verdict's worth of scores, optionally with the tokenization mode
+ * each came from -- the shape `Verdict` already has, so logging
+ * `{ scores, modes }` is enough.
+ */
+export type ScoreSample = Partial<Record<ReasonCode, number>> & {
+  modes?: Partial<Record<ReasonCode, TokenMode>>;
+};
 
 export interface Calibration {
   /** How many samples were read. */
@@ -210,21 +232,33 @@ export interface Calibration {
  * actually carry them, because a disabled detector logs nothing and counting
  * that as a zero would drag every percentile down and quietly recommend a
  * threshold far tighter than the traffic supports.
+ *
+ * Where a sample records `modes`, the segmentation is per **detector-mode
+ * pair** rather than per detector. `TAIL_LOOP` measured over words and over
+ * characters are two distributions with different base rates; pooling them
+ * produces a percentile that belongs to neither, and the resulting threshold
+ * would be applied to both. Samples with no `modes` field are summarised
+ * unsegmented, which is what older logs look like.
  */
 export function calibrate(samples: ScoreSample[], options: CalibrationOptions = {}): Calibration {
-  const byCode = new Map<ReasonCode, number[]>();
+  const groups = new Map<string, { code: ReasonCode; mode?: TokenMode; scores: number[] }>();
 
   for (const sample of samples) {
-    for (const [code, score] of Object.entries(sample) as [ReasonCode, unknown][]) {
+    const modes = sample.modes;
+    for (const [key, score] of Object.entries(sample)) {
+      // `modes` rides along in the same object; it is not a score.
       if (typeof score !== 'number' || !Number.isFinite(score)) continue;
-      const list = byCode.get(code);
-      if (list) list.push(score);
-      else byCode.set(code, [score]);
+      const code = key as ReasonCode;
+      const mode = modes?.[code];
+      const groupKey = mode ? `${code}:${mode}` : code;
+      const group = groups.get(groupKey);
+      if (group) group.scores.push(score);
+      else groups.set(groupKey, { code, ...(mode && { mode }), scores: [score] });
     }
   }
 
-  const summaries = [...byCode.entries()]
-    .map(([code, scores]) => summarise(code, scores, options))
+  const summaries = [...groups.values()]
+    .map(({ code, mode, scores }) => summarise(code, scores, { ...options, ...(mode && { mode }) }))
     .sort((a, b) => b.distribution.n - a.distribution.n);
 
   return { n: samples.length, summaries };

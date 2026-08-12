@@ -117,6 +117,29 @@ Zero of the healthy fixtures trip it, and the watching costs **~0.05ms per
 check** — around 0.7ms across a 5,500 character response, flat as the stream
 grows rather than quadratic in its length.
 
+**Those numbers are measured on Latin-script fixtures and do not carry over
+unchanged.** For Chinese, Japanese and Thai the same measurement gives
+**0-85%**, and the spread is the whole story:
+
+```
+cjk-tail-loop-th-nopunct       caught at  240/1640 chars ->  85% never generated
+cjk-tail-loop-ja-nopunct       caught at  240/800  chars ->  70% never generated
+cjk-tail-loop-zh-nopunct       caught at  240/640  chars ->  63% never generated
+cjk-tail-loop-diluted          caught at 1840/2303 chars ->  20% never generated
+cjk-tail-loop-short            never mid-stream (128 chars, under the warmup)
+```
+
+A response that loops from the start saves what a Latin one saves. A response
+that answers properly and *then* falls into a Chinese loop is caught late,
+because there is nothing to detect until the loop begins — 20% on that fixture,
+and less on a longer healthy prefix. Responses shorter than the 240-character
+warmup are never judged mid-stream at all; they are caught by `end()`, after you
+have paid for them.
+
+Late detection is still worth having: it stops a broken response being cached,
+returned, or counted as a success, which is the reason this package exists. It
+is just not the token saving, and you should not budget for one.
+
 For manual control over the loop, use the primitive:
 
 ```ts
@@ -165,7 +188,82 @@ outputGuard({
 ```
 
 `ai` is an **optional peer dependency** — importing the subpath does not pull it
-in, and the main entry point has no peers at all.
+in, and the main entry point has no peers at all. Supported: **`ai` v5, v6 and
+v7**. CI installs the packed tarball against each of those and both typechecks
+and runs the adapter, so the range is one that has been executed rather than
+assumed.
+
+**`ai` v4 is not supported, and forcing it will look like a bug in this
+package.** v4's middleware hands back `text` where v5+ hands back a `content`
+array, and streams `{ textDelta }` where v5+ streams `{ delta }`. This adapter
+reads the v5+ shape, so on v4 it sees the empty string for every response —
+which means **every healthy generation is flagged `EMPTY`, and under the default
+`onDegenerate: 'throw'` every call throws `DegenerateOutputError`.** It is not
+that the guard misses things on v4; it rejects everything. The peer range now
+refuses the install so you find out at `npm install` rather than in production.
+If you are pinned to v4, do not override it — stay on the core entry point and
+call `checkOutput` on the result yourself.
+
+### OpenAI SDK — and anything speaking its protocol
+
+One wrap, and both call shapes are guarded:
+
+```ts
+import OpenAI from 'openai';
+import { withOutputGuard } from 'llm-output-guard/openai';
+import { presets } from 'llm-output-guard';
+
+const client = withOutputGuard(new OpenAI(), {
+  ...presets.chat,
+  onDegenerate: 'abort',
+});
+```
+
+This is also how you guard **Groq, Together, OpenRouter, Fireworks, DeepInfra,
+vLLM and Ollama** — anything you reach through an OpenAI-compatible `baseURL`
+works, because the adapter is typed against the chat-completions shape rather
+than against OpenAI the company.
+
+Non-streaming calls are already paid for by the time anything can run, so a
+degenerate one throws `DegenerateOutputError` for your fallback layer to catch:
+
+```ts
+const completion = await client.chat.completions.create({ model, messages });
+```
+
+Streaming is where it pays. The guard watches deltas and **cancels the HTTP
+request** the moment a loop is detectable:
+
+```ts
+const stream = await client.chat.completions.create({ model, messages, stream: true });
+for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.content ?? '');
+```
+
+Against a looping model driven through the real SDK over a mock transport, the
+provider was asked for **16 of 135 chunks — 88% never generated**. That number is
+measured at the transport, not at the loop: the test counts what the server was
+actually asked to produce and asserts the response body was cancelled, because a
+guard that stops iterating while the connection keeps streaming is still billed
+in full.
+
+`onDegenerate` and `onVerdict` are the same options as the Vercel adapter, from
+the same type — `'throw'` (default, also cancels the stream), `'abort'` (stop
+cleanly, keep what arrived), or `'ignore'`. Start with `'ignore'` plus
+`onVerdict` to watch your own traffic first:
+
+```ts
+withOutputGuard(new OpenAI(), {
+  ...presets.chat,
+  onDegenerate: 'ignore',
+  onVerdict: (verdict, { streaming }) =>
+    metrics.record(verdict.scores, { streaming, modes: verdict.modes }),
+});
+```
+
+`openai` is an **optional peer dependency**, and the wrapper is a proxy: every
+other method on the client, and `create()`'s own `.withResponse()`, pass through
+untouched. `finish_reason: 'length'` is mapped into the final check, so
+`TRUNCATED` fires on a response that hit `max_tokens`.
 
 **What runs when.** Mid-stream only the redundancy detectors are meaningful:
 partial output is genuinely short, genuinely cut off, and genuinely not valid
@@ -173,7 +271,10 @@ JSON, so `TOO_SHORT`, `TRUNCATED`, `INVALID_JSON` and `LANG_MISMATCH` would
 fire on every healthy generation and teach you to ignore the guard. They are
 deferred to `end()`. `LOW_ENTROPY` is deferred too, for cost — it is ~100x the
 other detectors, and everything it would have caught early is caught by
-`REPETITION` anyway.
+`REPETITION`, or by `TAIL_LOOP`'s character mode on non-spaced scripts.
+
+Both adapters share this behaviour because both drive the same
+`createStreamGuard`. Neither reimplements it.
 
 ---
 
@@ -184,13 +285,21 @@ other detectors, and everything it would have caught early is caught by
   ok: false,
   reasons: [
     { code: 'REPETITION', score: 0.83, threshold: 0.4, message: '83% of 3-grams are duplicates.' },
-    { code: 'TAIL_LOOP',  score: 0.90, threshold: 0.5, message: 'Response ends in a repeating block…' },
+    { code: 'TAIL_LOOP',  score: 0.90, threshold: 0.5, message: 'Response ends in a repeating block…',
+      mode: 'word' },
   ],
   scores: { EMPTY: 0, TOO_SHORT: 0, REPETITION: 0.83, TAIL_LOOP: 0.90, LOW_ENTROPY: 0.41 },
+  modes:  { TAIL_LOOP: 'word' },
 }
 ```
 
 Every detector runs even after one fails, so `reasons` shows the whole picture instead of whichever check happened to be ordered first. `scores` includes passing detectors too — send them to your metrics and you will know your real degeneration rate within a day.
+
+`modes` says which tokenizer produced a score, for the detectors that have more
+than one. **Log it next to `scores`.** `TAIL_LOOP` measures words on spaced
+scripts and characters on Chinese, Japanese and Thai; those are two
+distributions with different base rates, and aggregating them into one histogram
+gives you a number that describes neither.
 
 ## Detectors
 
@@ -198,8 +307,8 @@ Every detector runs even after one fails, so `reasons` shows the whole picture i
 |---|---|---|
 | `EMPTY` | Whitespace, lone punctuation, `{}`, empty fences | Content presence |
 | `TOO_SHORT` | Non-empty but useless | Length vs. minimum |
-| `REPETITION` | Loops and stutters | Duplicate n-gram fraction |
-| `TAIL_LOOP` | Good start, then a stuck ending | Periodicity in the trailing window |
+| `REPETITION` | Loops and stutters | Duplicate word n-gram fraction |
+| `TAIL_LOOP` | Good start, then a stuck ending | Periodicity in the trailing window, over words or characters |
 | `LOW_ENTROPY` | Character-level collapse, token artifacts | Hand-rolled LZ77 compression ratio |
 | `TRUNCATED` | Cut off mid-thought | `finish_reason`, unbalanced fences/brackets |
 | `INVALID_JSON` | Prose around the payload, missing keys | Parse + key contract |
@@ -248,6 +357,13 @@ object, a whole `Verdict`, or either of those buried in a wider log record all
 work, because a calibration step you have to reshape your logs for is one you
 will not run. `--json` emits the same analysis as data.
 
+If you log `modes` alongside `scores`, detectors are segmented by tokenizer and
+reported as `TAIL_LOOP [word]` and `TAIL_LOOP [char]`, each suggesting its own
+option. Do this if your traffic is not all one script: pooled, the two
+distributions produce a single threshold that is wrong for both — word-mode
+`TAIL_LOOP` on Indonesian traffic has a healthy maximum near 0.35 where character
+mode's is near 0.06.
+
 **What it can and cannot tell you.** The corpus can compute a real margin
 because every fixture is labelled. Your logs are not, and no arithmetic
 recovers a label that was never written down. So these numbers bound *false
@@ -266,13 +382,25 @@ A miss is annoying. **A false positive is worse**: a healthy response gets disca
 So the corpus carries deliberate traps — markdown tables, repeated-prefix lists, code blocks, rhetorical refrains — all of which a naive detector flags. `npm run calibrate` prints the margin between the worst healthy score and the weakest degenerate one:
 
 ```
-=== REPETITION ===
-  healthy max   :  0.073  (code-python-snippet)
-  degenerate min:  0.771  (tail-loop-after-good-start)
-  margin        :  0.698  OK
+=== TAIL_LOOP [word] ===
+  healthy max   :  0.000  (code-block-typescript)
+  degenerate min:  0.900  (tail-loop-after-good-start)
+  margin        :  0.900  OK
+
+=== TAIL_LOOP [char] ===
+  healthy max   :  0.291  (prose-zh-poem-refrain)
+  degenerate min:  0.829  (cjk-refrain-x20)
+  margin        :  0.538  OK
 ```
 
-If that margin ever goes thin, the answer is a better detector, not a nudged threshold.
+Detectors with two tokenizers are reported per mode, and each detector is scored
+only against fixtures labelled for it — otherwise a tail loop that `LOW_ENTROPY`
+was never meant to catch drags `LOW_ENTROPY`'s margin negative and the report
+reads like a regression in something nobody touched.
+
+If that margin ever goes thin, the answer is a better detector, not a nudged
+threshold. That rule is why `REPETITION` has no character mode: the one that was
+built came out with a *negative* margin, so it was deleted rather than tuned.
 
 ## Growing the corpus
 
@@ -290,12 +418,104 @@ Output lands in `test/fixtures/raw/` **unreviewed**. Read each one, label it, th
 - **Scores, not booleans.** Detectors report 0–1 and leave the threshold decision to you.
 - **Abstains rather than guesses.** Samples too short to judge score 0.
 
+## Script coverage
+
+The dividing line is **whether a script puts spaces between words**, not whether
+it is Latin. Korean, Cyrillic, Greek, Arabic and Devanagari all separate words
+and are handled exactly like English. Han, Hiragana, Katakana and Thai do not,
+and get different treatment:
+
+| | Chinese / Japanese / Thai | Everything else |
+|---|---|---|
+| `TAIL_LOOP` | **Character mode**, `maxCharTailLoop` (default 0.7) | Word mode, `maxTailLoop` (default 0.5) |
+| `REPETITION` | **Blind — see below** | Word n-grams, works |
+| `LOW_ENTROPY`, `TRUNCATED`, `INVALID_JSON`, `EMPTY`, `TOO_SHORT` | Character- or structure-based, unaffected | Same |
+| `LANG_MISMATCH` | Not covered (`id`/`en`/`es` only) | `id`/`en`/`es` only |
+
+Mode is chosen per detector, from the span that detector actually reads — so a
+reply that answers in English and then loops in Chinese puts the *tail* detector
+into character mode without moving anything else. It is reported in
+`Verdict.modes`.
+
+**`REPETITION` is blind on these scripts, and we could not fix it.** A word
+tokenizer sees a punctuation-delimited Chinese clause as one token, and a loop
+with no punctuation as one token for the entire response, so it scores 0.000 on
+an obvious loop. A character n-gram fallback was built, measured, and rejected —
+because **it would add no coverage and cost a false-positive surface**.
+
+It adds nothing because `TAIL_LOOP`'s character mode already catches every
+degenerate non-Latin sample in the corpus, at a margin of 0.538.
+
+It costs something because healthy *structured* CJK output scores high under it.
+Repeated key scaffolding around short CJK values is genuinely redundant
+character-by-character:
+
+```
+healthy json-zh-keys-valid, char n-grams (n=4), all items distinct
+   8 items  0.396     20 items  0.543     40 items  0.597
+  12 items  0.474     30 items  0.577
+```
+
+That flattens rather than diverging — it converges on the scaffolding's own
+proportion — so a threshold does exist. But the plateau near 0.6 against the
+weakest pure loop at 0.872 leaves about **0.19**, under the 0.2 margin this
+package holds itself to, and the healthy side climbs with the number of keys a
+payload carries. A detector with nothing to add and a structure-sensitive margin
+is a false positive waiting for someone's payload shape to change, which is the
+wrong trade here.
+
+`TAIL_LOOP`'s character mode covers the gap in practice — it requires *exact*
+periodicity, which scaffolding never produces, and it catches every degenerate
+non-Latin sample in the corpus. But a mid-response CJK loop that recovers before
+the end is not detected by anything here. If that is your failure mode, log
+`LOW_ENTROPY` and threshold it yourself.
+
+Two more things worth knowing:
+
+- **Character mode abstains below 80 characters.** Three identical short
+  sentences closing a 40-character reply look like total coverage and are not
+  evidence of anything.
+
+### Character mode is deliberately slower to fire
+
+The two modes do not flag the same shape at the same point, and the gap is
+large. Taking the clearest case — a response ending in an identical repeated
+line — measured on both:
+
+| Repeats of an identical closing line | English (`maxTailLoop` 0.5) | Chinese (`maxCharTailLoop` 0.7) |
+|---|---|---|
+| 3 | **flagged** (0.563) | 0.000 — under the 80-character floor |
+| 5 | flagged (0.682) | 0.000 |
+| 9 | flagged (0.794) | 0.686 |
+| 10 | flagged (0.811) | **flagged** (0.708) |
+| 20 | flagged (0.900) | flagged (0.829) |
+
+**English flags at 3 repeats, Chinese at about 10** — and nearer 30 when a long
+healthy passage precedes the loop, because the score is coverage of the trailing
+window rather than a count.
+
+This is a decision, not an accident of two constants. Word mode counts tokens,
+so a repeated clause is several tokens and accumulates fast. Character mode
+measures how much of a fixed trailing window one repeating block covers, and a
+short refrain takes many repeats to fill it. Tightening `maxCharTailLoop` toward
+word-mode aggression would put it into the range where ordinary CJK structured
+output sits, which is the trade this package refuses.
+
+**The practical consequence: a looping model answering in Chinese, Japanese or
+Thai generates several times more output before the guard fires than the same
+model looping in English.** Detection is later and the token saving is smaller.
+If you serve mostly non-spaced-script traffic and that cost matters more to you
+than the false-positive risk, lower `maxCharTailLoop` toward 0.5 — and calibrate
+it against your own traffic first, because that is the range healthy structured
+output starts to reach.
+
 ## Limitations
 
 - Not a hallucination detector. It measures *shape*, never truth.
+- `REPETITION` does not work on Chinese, Japanese or Thai. See above — this is a known, measured gap, not an oversight.
 - Language detection is a function-word heuristic covering `id`/`en`/`es`. Opt-in, and unreliable under 25 words.
 - Truncation from a missing full stop is weak evidence, scored 0.55 and left below the default thresholds on purpose. Lower `maxTruncation` to ~0.5 to catch it, and expect false positives.
-- Thresholds calibrated on the bundled corpus. Yours will differ.
+- Thresholds calibrated on the bundled corpus. Yours will differ — and the word and character thresholds need calibrating **separately**, because they are separate distributions.
 
 ## License
 

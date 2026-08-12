@@ -10,6 +10,7 @@
  */
 import type { Verdict } from './types.js';
 import type { StreamGuardOptions } from './stream.js';
+import type { AdapterGuardOptions, DegenerateAction } from './internal/adapter-options.js';
 import { checkOutput, DegenerateOutputError } from './check.js';
 import { createStreamGuard } from './stream.js';
 
@@ -42,31 +43,13 @@ function finishReasonOf(value: FinishReasonLike): string | undefined {
   return undefined;
 }
 
-export type DegenerateAction = 'throw' | 'abort' | 'ignore';
+export type { DegenerateAction };
 
-export interface OutputGuardOptions extends StreamGuardOptions {
-  /**
-   * What to do when output is judged degenerate. Default `'throw'`.
-   *
-   * - `'throw'` errors the call with a `DegenerateOutputError`, which
-   *   `.retryable` marks as safe for your fallback layer to act on. On a
-   *   stream this also cancels the upstream request, so the tokens you have
-   *   not been billed for yet never get generated.
-   * - `'abort'` ends the stream cleanly and keeps whatever arrived first.
-   *   Same token saving, no exception to handle -- use it when a partial
-   *   answer beats no answer.
-   * - `'ignore'` reports through `onVerdict` and changes nothing. This is the
-   *   setting to roll out with: watch your own traffic before letting any
-   *   threshold fail a request.
-   */
-  onDegenerate?: DegenerateAction;
-  /**
-   * Every verdict, passing or failing, once per call. Send the scores to your
-   * metrics -- a week of them is what turns the shipped thresholds into
-   * thresholds you can defend for your own traffic.
-   */
-  onVerdict?: (verdict: Verdict, context: { streaming: boolean }) => void;
-}
+/**
+ * Shares {@link AdapterGuardOptions} with `llm-output-guard/openai`, so the two
+ * adapters cannot drift apart. Reading one set of docs is meant to be enough.
+ */
+export interface OutputGuardOptions extends StreamGuardOptions, AdapterGuardOptions {}
 
 /**
  * Guards a model against returning degenerate output, as AI SDK middleware.
@@ -95,6 +78,23 @@ export function outputGuard(options: OutputGuardOptions = {}) {
   };
 
   return {
+    /**
+     * A type-level tag only. It is present because the v3 middleware type
+     * (`ai` v6) requires it, while v2 (`ai` v5) has no such field and v4
+     * (`ai` v7) relaxed it to any string. `'v3'` is the one literal all three
+     * admit, so a single object satisfies every supported major.
+     *
+     * This is load-bearing on an assumption: that `wrapLanguageModel`'s
+     * `doWrap` destructures the hooks and never reads this field. That is true
+     * of every version in the peer range, and it is checked -- `npm run
+     * check:peer-ai` runs the adapter against each major, so a version that
+     * started dispatching on the tag would fail there rather than in
+     * production. **If that check is ever removed, remove this tag with it**:
+     * without it the claim becomes an assumption again, and the failure it
+     * would hide is the adapter being handed the wrong contract.
+     */
+    specificationVersion: 'v3' as const,
+
     /**
      * Non-streaming. The tokens are already bought by the time this runs, so
      * all it can do is stop a bad answer from being used as a good one.

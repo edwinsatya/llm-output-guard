@@ -1,0 +1,18 @@
+{
+  "id": "prose-zh-technical",
+  "note": "Ordinary Chinese technical prose. Char mode, and must stay near zero.",
+  "text": "分布式系统里最常见的误解，是把消息总线当成日志来用。总线关心的是把一条消息送到当下在线的订阅者，它不为你保存历史；日志关心的是把事件按顺序持久化下来，谁什么时候来读都能读到同一份序列。这两件事的运维成本差别很大。用总线时你要接受至多一次投递，客户端断线重连之后必须重新拉取状态，而不是指望把错过的消息补上。用日志时你要为存储和压实付出代价，还要想清楚保留多久、按什么键分区、消费者组怎么划分。",
+  "measured": {
+    "chars": 196,
+    "wordTokens": 14,
+    "nonSpacedRatio": 1,
+    "tailNonSpacedRatio": 1,
+    "tailLoop": {
+      "score": 0,
+      "mode": "char"
+    },
+    "scores": {
+      "REPETITION": 0
+    }
+  }
+}

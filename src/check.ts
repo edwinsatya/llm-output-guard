@@ -1,5 +1,5 @@
-import type { CheckOptions, Reason, ReasonCode, Verdict } from './types.js';
-import { repetitionScore, tailLoopScore } from './detectors/repetition.js';
+import type { CheckOptions, Reason, ReasonCode, TokenMode, Verdict } from './types.js';
+import { repetitionScore, tailLoopDetail } from './detectors/repetition.js';
 import { compressibilityScore } from './detectors/compressibility.js';
 import { emptinessScore, shortnessScore } from './detectors/emptiness.js';
 import { truncationScore } from './detectors/truncation.js';
@@ -10,11 +10,14 @@ import { excerpt } from './internal/tokenize.js';
 const DEFAULTS: Required<
   Pick<CheckOptions,
     'minLength' | 'maxRepetition' | 'maxTailLoop' | 'maxCompressibility' |
-    'maxTruncation' | 'expectJson' | 'allowJsonFence' | 'maxLangMismatch' | 'ngram'>
+    'maxTruncation' | 'expectJson' | 'allowJsonFence' | 'maxLangMismatch' | 'ngram' |
+    'maxCharTailLoop' | 'nonSpacedCutoff'>
 > = {
   minLength: 1,
   maxRepetition: 0.35,
   maxTailLoop: 0.5,
+  maxCharTailLoop: 0.7,
+  nonSpacedCutoff: 0.5,
   maxCompressibility: 0.75,
   maxTruncation: null as unknown as number,
   expectJson: false,
@@ -43,11 +46,19 @@ export function checkOutput(
   const opts = { ...DEFAULTS, ...options };
   const reasons: Reason[] = [];
   const scores: Partial<Record<ReasonCode, number>> = {};
+  const modes: Partial<Record<ReasonCode, TokenMode>> = {};
   let parsedJson: unknown;
 
-  const add = (code: ReasonCode, score: number, threshold: number, message: string) => {
+  const add = (
+    code: ReasonCode,
+    score: number,
+    threshold: number,
+    message: string,
+    mode?: TokenMode,
+  ) => {
     scores[code] = score;
-    if (score > threshold) reasons.push({ code, score, threshold, message });
+    if (mode) modes[code] = mode;
+    if (score > threshold) reasons.push({ code, score, threshold, message, ...(mode && { mode }) });
   };
 
   /*
@@ -93,10 +104,21 @@ export function checkOutput(
       `${Math.round(s * 100)}% of ${opts.ngram}-grams are duplicates.`);
   }
 
-  if (opts.maxTailLoop != null) {
-    const s = tailLoopScore(text);
-    add('TAIL_LOOP', s, opts.maxTailLoop,
-      `Response ends in a repeating block covering ${Math.round(s * 100)}% of the tail.`);
+  /*
+   * The tail detector picks its own tokenizer from its own tail, so the
+   * threshold has to be picked the same way -- `maxTailLoop` and
+   * `maxCharTailLoop` describe different distributions and are not
+   * interchangeable. Either can be null independently, which is what disabling
+   * one mode looks like.
+   */
+  {
+    const { score, mode } = tailLoopDetail(text, { nonSpacedCutoff: opts.nonSpacedCutoff });
+    const threshold = mode === 'char' ? opts.maxCharTailLoop : opts.maxTailLoop;
+    if (threshold != null) {
+      add('TAIL_LOOP', score, threshold,
+        `Response ends in a repeating block covering ${Math.round(score * 100)}% of the tail.`,
+        mode);
+    }
   }
 
   if (opts.maxCompressibility != null) {
@@ -129,7 +151,13 @@ export function checkOutput(
       `Response does not look like '${opts.expectLang}'.`);
   }
 
-  return { ok: reasons.length === 0, reasons, scores, json: parsedJson };
+  return {
+    ok: reasons.length === 0,
+    reasons,
+    scores,
+    ...(Object.keys(modes).length > 0 && { modes }),
+    json: parsedJson,
+  };
 }
 
 /** Error thrown by {@link assertOutput}, carrying the full verdict. */

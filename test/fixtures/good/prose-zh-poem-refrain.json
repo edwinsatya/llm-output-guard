@@ -1,0 +1,18 @@
+{
+  "id": "prose-zh-poem-refrain",
+  "note": "Trap. A six-times refrain closing a Chinese poem -- legitimate, and the healthy end of the same curve cjk-refrain-x20 sits at the degenerate end of. Char TAIL_LOOP scores 0.291 here against a 0.7 threshold. The curve crosses at roughly ten consecutive repeats.",
+  "text": "用户要求写一段关于离别的短诗，下面是我的尝试。整体的节奏偏慢，重复的句子用来收束情绪，这是这一类作品里常见的处理方式。如果你希望更克制一些，可以把最后的重复减少到两次。\n\n站台的灯一盏一盏亮起来\n行李比来时更重\n你说的那句再见\n被风吹散在铁轨上\n\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n",
+  "measured": {
+    "chars": 178,
+    "wordTokens": 17,
+    "nonSpacedRatio": 1,
+    "tailNonSpacedRatio": 1,
+    "tailLoop": {
+      "score": 0.291,
+      "mode": "char"
+    },
+    "scores": {
+      "REPETITION": 0.2
+    }
+  }
+}

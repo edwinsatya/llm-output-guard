@@ -1,0 +1,18 @@
+{
+  "id": "prose-zh-repeated-prefix-steps",
+  "note": "Trap, and the CJK analogue of list-repeated-prefix. Every step opens with the identical verb phrase.",
+  "text": "发布流程如下，请按顺序执行，任何一步没有通过都不要继续往下走。\n\n请先确认配置文件中的数据库地址已经指向生产实例，而不是预发环境。\n请先确认镜像标签与发布单上记录的版本号完全一致，包括构建号后缀。\n请先确认灰度比例已经设置为百分之五，并且监控面板处于打开状态。\n请先确认回滚脚本可以在两分钟之内执行完毕，必要时提前演练一次。\n请先确认值班同事已经收到本次发布的通知，并且确认过时间窗口。\n请先确认变更记录已经写入内部文档，包含影响范围和回滚方式。",
+  "measured": {
+    "chars": 223,
+    "wordTokens": 15,
+    "nonSpacedRatio": 1,
+    "tailNonSpacedRatio": 1,
+    "tailLoop": {
+      "score": 0,
+      "mode": "char"
+    },
+    "scores": {
+      "REPETITION": 0
+    }
+  }
+}

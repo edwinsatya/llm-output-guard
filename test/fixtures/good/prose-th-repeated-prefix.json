@@ -1,0 +1,18 @@
+{
+  "id": "prose-th-repeated-prefix",
+  "note": "Thai list with an identical leading phrase on every line. Also the fixture that keeps the dispatch ratio honest: Script=Thai matches combining marks that \\p{L} does not, so the original ratio counted different sets in numerator and denominator and returned 1.275 for this text. Any cutoff at or below 1.0 was meaningless for Thai. The shipped ratio uses [\\p{L}\\p{M}] underneath and returns 1.000.",
+  "text": "ขั้นตอนการปรับใช้มีดังนี้ กรุณาทำตามลำดับและอย่าข้ามขั้นตอนใด ๆ\n\nกรุณาตรวจสอบว่าที่อยู่ฐานข้อมูลในไฟล์ตั้งค่าชี้ไปยังเครื่องที่ใช้งานจริง\nกรุณาตรวจสอบว่าแท็กของอิมเมจตรงกับหมายเลขรุ่นในใบแจ้งการปล่อยระบบ\nกรุณาตรวจสอบว่าสัดส่วนการปล่อยแบบค่อยเป็นค่อยไปตั้งไว้ที่ห้าเปอร์เซ็นต์\nกรุณาตรวจสอบว่าสคริปต์ย้อนกลับทำงานเสร็จภายในสองนาที\nกรุณาตรวจสอบว่าเพื่อนร่วมทีมที่เข้าเวรได้รับแจ้งการปล่อยระบบแล้ว",
+  "measured": {
+    "chars": 393,
+    "wordTokens": 74,
+    "nonSpacedRatio": 1,
+    "tailNonSpacedRatio": 1,
+    "tailLoop": {
+      "score": 0,
+      "mode": "char"
+    },
+    "scores": {
+      "REPETITION": 0
+    }
+  }
+}

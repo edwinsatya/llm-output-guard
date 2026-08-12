@@ -1,0 +1,22 @@
+{
+  "id": "cjk-refrain-x20",
+  "category": "tail-loop",
+  "note": "Twenty identical consecutive lines closing a Chinese poem. LABELLED DEGENERATE DELIBERATELY, and this is the fixture the char threshold rests on, so the reasoning is recorded here rather than left in a review thread. (1) repetition-bullet-clone is 25 identical lines and is already labelled bad, so the corpus set this precedent before this fixture existed. (2) This package measures form, not intent; a user who genuinely wants a 20x refrain raises maxCharTailLoop. (3) The shipped word-mode detector flags the identical English shape at THREE repeats, so calling this degenerate at twenty is far more permissive than what has always applied to Latin. Note the shape of the argument: relabelling this one fixture moved the margin from 0.093 to 0.53, which is exactly the kind of move that should be re-examined if it is ever cited again.",
+  "text": "用户要求写一段关于离别的短诗。\n\n站台的灯一盏一盏亮起来\n行李比来时更重\n\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n",
+  "expect": [
+    "TAIL_LOOP"
+  ],
+  "measured": {
+    "chars": 218,
+    "wordTokens": 23,
+    "nonSpacedRatio": 1,
+    "tailNonSpacedRatio": 1,
+    "tailLoop": {
+      "score": 0.829,
+      "mode": "char"
+    },
+    "scores": {
+      "REPETITION": 0.81
+    }
+  }
+}

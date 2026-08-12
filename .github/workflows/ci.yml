@@ -3,6 +3,11 @@ name: CI
 on:
   push: { branches: [main] }
   pull_request:
+  schedule:
+    # Daily, for `peer-ranges-latest` only. Off-peak minute to avoid the hour-mark
+    # queue on GitHub's shared runners.
+    - cron: '37 6 * * *'
+  workflow_dispatch:
 
 jobs:
   test:
@@ -20,6 +25,65 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  peer-ranges:
+    # Both adapter subpaths are structurally typed rather than importing from
+    # their peer, which is what keeps the peers optional -- and what lets a
+    # declared range drift away from the one that works without anything
+    # failing. This installs the packed tarball next to each version and both
+    # typechecks and runs it. See scripts/check-peers.mjs.
+    #
+    # Every version here is pinned. This job gates merges, so it must fail only
+    # when this repo changed -- a floating `^7` would let an upstream release
+    # redden a PR that touched nothing. Watching for that is the scheduled
+    # `peer-ranges-latest` job's work, and it is not allowed to block anyone.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Ends of each declared range, plus the majors between. Floors are
+        # pinned exactly. Bump these deliberately, as a change with a diff.
+        include:
+          - { peer: ai, version: '5.0.0' }
+          - { peer: ai, version: '6.0.250' }
+          - { peer: ai, version: '7.0.62' }
+          - { peer: openai, version: '4.0.0' }
+          - { peer: openai, version: '5.23.2' }
+          - { peer: openai, version: '6.49.0' }
+          - { peer: openai, version: '7.4.0' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: node scripts/check-peers.mjs ${{ matrix.peer }} ${{ matrix.version }}
+
+  peer-ranges-latest:
+    # The early warning that a peer changed its contract. Floats to the newest
+    # release of each supported major, so it can break without this repo
+    # changing -- which is exactly why it runs on a schedule and never gates a
+    # PR. A red run here means: go read the upstream diff, then either pin the
+    # new version into `peer-ranges` or narrow the declared peer range.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { peer: ai, version: '5' }
+          - { peer: ai, version: '6' }
+          - { peer: ai, version: '7' }
+          - { peer: openai, version: '4' }
+          - { peer: openai, version: '5' }
+          - { peer: openai, version: '6' }
+          - { peer: openai, version: '7' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: node scripts/check-peers.mjs ${{ matrix.peer }} ${{ matrix.version }}
 
   no-runtime-deps:
     runs-on: ubuntu-latest

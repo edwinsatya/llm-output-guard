@@ -29,11 +29,28 @@ const DEFERRED_TO_END: CheckOptions = {
    * is 100x the other two detectors combined -- affordable once per response,
    * ruinous every few hundred characters of every stream.
    *
-   * Nothing is lost by waiting. Every fixture it catches alone is caught
-   * earlier here by REPETITION, because character-level collapse is also
-   * n-gram collapse; and the one signal it owns outright -- a response that
-   * is uniformly redundant end to end -- is a statement about the finished
-   * text, which is exactly when it now runs.
+   * DEFERRING IT IS CONDITIONAL, NOT FREE. The condition is that the redundancy
+   * detectors still running here reach a verdict *earlier* than LOW_ENTROPY
+   * would have, on every script. Two things make that true today:
+   *
+   *   - For spaced scripts, REPETITION catches what LOW_ENTROPY would, because
+   *     character-level collapse is also n-gram collapse.
+   *   - For Han, Kana and Thai, REPETITION is blind -- a loop with no
+   *     punctuation is a single word token -- and TAIL_LOOP's character mode is
+   *     what covers it. Measured at the 240-character warmup, that mode scores
+   *     0.854-1.000 on every degenerate CJK fixture and fires on the first
+   *     check. At that same moment LOW_ENTROPY reads 0.453-0.805, i.e. below
+   *     its own 0.75 threshold on most of them: running it here would detect
+   *     these *later*, at 100x the cost.
+   *
+   * SO THIS BREAKS IF: character dispatch is disabled (`maxCharTailLoop: null`,
+   * or `nonSpacedCutoff` raised out of reach), or `warmup` is raised past the
+   * point where a loop's periodicity has established itself in the window. A
+   * 15-character loop unit repeats 16 times in 240 characters against a
+   * `minRepeats` of 3, so there is room -- but it is room, not immunity. If you
+   * change either, re-measure before assuming this deferral is still safe;
+   * otherwise CJK streams silently lose mid-stream detection entirely and the
+   * only thing left is the end() check, which is after you have paid.
    */
   maxCompressibility: null,
 };

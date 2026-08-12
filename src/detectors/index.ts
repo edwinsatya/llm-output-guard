@@ -1,5 +1,5 @@
-export { repetitionScore, tailLoopScore } from './repetition.js';
-export type { RepetitionOptions, TailLoopOptions } from './repetition.js';
+export { repetitionScore, tailLoopScore, tailLoopDetail } from './repetition.js';
+export type { RepetitionOptions, TailLoopOptions, TailLoopResult } from './repetition.js';
 export { compressionRatio, compressibilityScore } from './compressibility.js';
 export type { CompressibilityOptions } from './compressibility.js';
 export { emptinessScore, shortnessScore } from './emptiness.js';

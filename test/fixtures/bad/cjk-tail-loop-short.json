@@ -1,0 +1,23 @@
+{
+  "id": "cjk-tail-loop-short",
+  "category": "tail-loop",
+  "note": "128 characters of pure Chinese loop. Short enough that LOW_ENTROPY reads 0.585, under its 0.75 threshold, so before char dispatch this passed every detector on a complete response. Sits just above the 80-character floor char mode abstains below.",
+  "text": "我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题",
+  "expect": [
+    "TAIL_LOOP"
+  ],
+  "measured": {
+    "chars": 128,
+    "wordTokens": 1,
+    "nonSpacedRatio": 1,
+    "tailNonSpacedRatio": 1,
+    "tailLoop": {
+      "score": 1,
+      "mode": "char"
+    },
+    "scores": {
+      "REPETITION": 0,
+      "LOW_ENTROPY": 0.585
+    }
+  }
+}

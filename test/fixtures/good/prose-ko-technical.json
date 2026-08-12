@@ -1,0 +1,18 @@
+{
+  "id": "prose-ko-technical",
+  "note": "Korean. Non-Latin but space-separated, so it stays in word mode -- the fixture that keeps the dispatch keyed on spacing rather than on script.",
+  "text": "이 경우에는 Redis 의 발행 구독이 적절한 기본 요소입니다. 각 서버가 방 채널을 구독하고 수를 그 채널에 발행하므로, 팬아웃은 특정 소켓이 어느 인스턴스에 도착했는지에 더 이상 의존하지 않습니다. 절충점은 최대 한 번 전달이며, 따라서 대국 도중 재접속한 클라이언트는 메시지를 재생하는 대신 상태를 다시 가져와야 합니다. 더 강한 보장이 필요하다면 필요한 것은 버스가 아니라 로그이고, 그것은 운영 비용이 다른 별개의 인프라입니다.",
+  "measured": {
+    "chars": 244,
+    "wordTokens": 60,
+    "nonSpacedRatio": 0,
+    "tailNonSpacedRatio": 0,
+    "tailLoop": {
+      "score": 0,
+      "mode": "word"
+    },
+    "scores": {
+      "REPETITION": 0
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "id": "prose-ja-identical-clause",
+  "note": "Trap. Every bullet ends in the same Japanese clause -- the strongest structural repetition that still reads as ordinary output. Char n-grams score it 0.297 (n=4), the highest of any healthy non-Latin prose fixture here, which is part of why char-mode REPETITION was rejected. Char TAIL_LOOP scores 0.000: the bullets differ, so there is no exact period.",
+  "text": "リポジトリを確認したうえで、面接で扱うとよい観点を挙げます。\n\n・状態管理ライブラリを導入する判断基準について説明してください。\n・APIの責務分割をどのように決めているかについて説明してください。\n・サーバーサイドレンダリングでの認証情報の受け渡しについて説明してください。\n・リファクタリングの費用対効果をどう見積もるかについて説明してください。\n・コードレビューで最も多く指摘する点について説明してください。\n・依存関係の更新可否をどう判断するかについて説明してください。\n・障害調査で最初に確認する指標について説明してください。\n・キャッシュの失効戦略をどう決めているかについて説明してください。",
+  "measured": {
+    "chars": 302,
+    "wordTokens": 10,
+    "nonSpacedRatio": 0.975,
+    "tailNonSpacedRatio": 0.975,
+    "tailLoop": {
+      "score": 0,
+      "mode": "char"
+    },
+    "scores": {
+      "REPETITION": 0
+    }
+  }
+}

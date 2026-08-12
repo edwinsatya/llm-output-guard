@@ -1,0 +1,18 @@
+{
+  "id": "prose-zh-numbered-list",
+  "note": "Trap. Twelve numbered Chinese questions: identical numeric scaffolding, varied content. Char n-grams see heavy duplication but there is no exact period, which is why the tail detector is the one that survived and whole-text char REPETITION did not.",
+  "text": "根据你公开仓库里的提交记录，我整理了下面这些可以在面试里展开的问题。\n\n1. 你在什么情况下会引入状态管理库，而不是继续使用组件本地状态？\n2. 你如何决定一个接口应该返回聚合结果，还是让前端自己组合多次请求？\n3. 你在做服务端渲染时，怎样处理鉴权信息在首屏和客户端之间的传递？\n4. 你如何评估一次重构的收益，尤其是在没有明确性能指标的时候？\n5. 你在代码评审里最常提出的意见是什么，为什么集中在这一类？\n6. 你怎么判断一个依赖值不值得升级，特别是跨越大版本的时候？\n7. 你在排查线上问题时，第一步通常会看哪些信号？\n8. 你如何决定哪些逻辑应该写成测试，哪些留给类型系统保证？\n9. 你在设计缓存时，怎样确定失效策略和键的粒度？\n10. 你如何向不熟悉这块代码的同事解释一次复杂的变更？\n11. 你在什么时候会选择先上线再优化，什么时候坚持先优化？\n12. 你怎样判断一个抽象是过早的，还是恰好合适的？",
+  "measured": {
+    "chars": 407,
+    "wordTokens": 37,
+    "nonSpacedRatio": 1,
+    "tailNonSpacedRatio": 1,
+    "tailLoop": {
+      "score": 0,
+      "mode": "char"
+    },
+    "scores": {
+      "REPETITION": 0
+    }
+  }
+}

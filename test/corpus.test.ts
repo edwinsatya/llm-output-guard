@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { checkOutput } from '../src/index.js';
+import { tailLoopDetail } from '../src/detectors/index.js';
 import { presets } from '../src/presets.js';
-import type { CheckOptions } from '../src/types.js';
-import { badFixtures, goodFixtures } from './fixtures/load.js';
+import type { CheckOptions, ReasonCode, TokenMode } from '../src/types.js';
+import { badFixtures, goodFixtures, type Fixture } from './fixtures/load.js';
 
 /**
  * The contract this package lives or dies by.
@@ -46,6 +47,94 @@ describe('corpus: known-good output passes untouched', () => {
       expect(verdict.ok, `false positive on healthy output [${detail}] -- ${fx.note}`).toBe(true);
     });
   }
+});
+
+/**
+ * A healthy fixture must be healthy *by measurement*, not only by passing.
+ *
+ * The failure this prevents actually happened: a control built by repeating one
+ * paragraph scored `REPETITION 0.491` -- degenerate by this package's own
+ * definition -- and was used as evidence that a detector behaved well. The score
+ * was on screen the whole time in the margin report. What was missing was an
+ * assertion, so a fixture only had to stay under a threshold to be believed.
+ *
+ * The rule comes from the corpus's own distribution rather than a chosen
+ * multiplier: a healthy fixture must sit in the **lower half of the margin** for
+ * its detector-mode pair, i.e. below half the weakest degenerate score for that
+ * pair. Where the modes differ, so does the bound -- `TAIL_LOOP` allows 0.450 in
+ * word mode and 0.415 in char mode, because their degenerate floors differ.
+ *
+ * Known residual: this catches a fixture built from a repeated block, and one
+ * whose content cycles enough to score. It does *not* catch a generator whose
+ * items are individually distinct but share a template, which produces mild
+ * repetition below these bounds. That class still needs a human reading the
+ * fixture.
+ */
+describe('corpus: healthy fixtures are healthy by measurement', () => {
+  const PAIRS: Array<[ReasonCode, TokenMode | null]> = [
+    ['REPETITION', null],
+    ['TAIL_LOOP', 'word'],
+    ['TAIL_LOOP', 'char'],
+    ['LOW_ENTROPY', null],
+  ];
+
+  const scoreOf = (fx: Fixture, code: ReasonCode) =>
+    checkOutput(fx.text, { ...presets.chat, ...fx.options }).scores[code] ?? 0;
+
+  /** Same noise floor `npm run calibrate` uses: below this the detector abstained. */
+  const NOISE = 0.05;
+
+  for (const [code, mode] of PAIRS) {
+    const label = `${code}${mode ? ` [${mode}]` : ''}`;
+    const inSegment = (fx: Fixture) => (mode ? tailLoopDetail(fx.text).mode === mode : true);
+
+    it(`no healthy fixture scores into degenerate territory for ${label}`, () => {
+      const degenerate = badFixtures
+        .filter((f) => f.expect?.includes(code))
+        .filter(inSegment)
+        .map((f) => scoreOf(f, code))
+        .filter((v) => v > NOISE);
+
+      // Nothing labelled for this pair means nothing to measure against.
+      if (degenerate.length === 0) return;
+
+      const cap = Math.min(...degenerate) / 2;
+      const offenders = goodFixtures
+        .filter(inSegment)
+        .map((f) => ({ id: f.id, score: scoreOf(f, code) }))
+        .filter((x) => x.score > cap);
+
+      expect(
+        offenders,
+        `healthy fixtures scoring above ${cap.toFixed(3)} on ${label} — ` +
+          'either the fixture is not healthy, or it belongs in bad/',
+      ).toEqual([]);
+    });
+  }
+
+  /*
+   * Proof the bound has teeth, using the exact text that fooled us: one healthy
+   * paragraph repeated. It never enters the corpus -- a guard is only worth
+   * having if it fails on the thing it was built for, and asserting that here
+   * costs nothing and cannot rot.
+   */
+  it('rejects the repeated-paragraph control that slipped through before', () => {
+    const paragraph =
+      'Redis pub/sub is the right primitive here. Each server subscribes to the room ' +
+      'channel and publishes moves to it, so fan-out no longer depends on which instance ' +
+      'a given socket happens to land on. The tradeoff is at-most-once delivery. ';
+    const control = paragraph.repeat(2);
+
+    const degenerate = badFixtures
+      .filter((f) => f.expect?.includes('REPETITION'))
+      .map((f) => scoreOf(f, 'REPETITION'))
+      .filter((v) => v > NOISE);
+    const cap = Math.min(...degenerate) / 2;
+
+    const score = checkOutput(control, presets.chat).scores.REPETITION ?? 0;
+    expect(score, 'the control really is repetitive').toBeGreaterThan(0.4);
+    expect(score, 'and the bound rejects it').toBeGreaterThan(cap);
+  });
 });
 
 describe('corpus: every preset holds the no-false-positive line', () => {

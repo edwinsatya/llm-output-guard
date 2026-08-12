@@ -1,0 +1,21 @@
+{
+  "id": "json-zh-keys-valid",
+  "note": "Healthy structured Chinese output that actually reaches character mode: the keys are Chinese too, so the only letters in the response are CJK and the non-spaced ratio is 1.000. (Its sibling json-zh-array-valid has ASCII keys, measures 0.378, and dispatches to word mode -- so it cannot demonstrate anything about char-mode behaviour, which is what this fixture is for.) Under char n-grams (n=4) twenty distinct items score 0.543, and the curve flattens rather than climbing: 0.396 at eight items, 0.474 at twelve, 0.577 at thirty, 0.597 at forty. It converges because each item carries a constant amount of scaffolding, so the duplicate fraction tends toward the scaffolding proportion instead of diverging. That plateau near 0.6 against the weakest pure CJK loop at 0.872 leaves a margin of roughly 0.19 -- under this package's 0.2 bar, and sensitive to how many keys a payload carries. Char TAIL_LOOP scores 0.000 here because scaffolding never repeats with an exact period, which is why that detector shipped and char-mode REPETITION did not.",
+  "options": {
+    "expectJson": true
+  },
+  "text": "[\n  {\n    \"问题\": \"你在什么情况下会引入状态管理库\",\n    \"类别\": \"架构\",\n    \"难度\": \"简单\",\n    \"序号\": 1\n  },\n  {\n    \"问题\": \"面试时你怎么判断一个人是否真的写过生产代码\",\n    \"类别\": \"工程\",\n    \"难度\": \"中等\",\n    \"序号\": 2\n  },\n  {\n    \"问题\": \"冷启动时间从八秒降到两秒你会先动哪里\",\n    \"类别\": \"协作\",\n    \"难度\": \"困难\",\n    \"序号\": 3\n  },\n  {\n    \"问题\": \"为什么说过早抽象比重复更难修复\",\n    \"类别\": \"测试\",\n    \"难度\": \"简单\",\n    \"序号\": 4\n  },\n  {\n    \"问题\": \"数据库索引建多了会带来什么代价\",\n    \"类别\": \"性能\",\n    \"难度\": \"中等\",\n    \"序号\": 5\n  },\n  {\n    \"问题\": \"你怎么向产品经理解释技术债务\",\n    \"类别\": \"安全\",\n    \"难度\": \"困难\",\n    \"序号\": 6\n  },\n  {\n    \"问题\": \"灰度发布出问题时第一步该做什么\",\n    \"类别\": \"运维\",\n    \"难度\": \"简单\",\n    \"序号\": 7\n  },\n  {\n    \"问题\": \"单元测试覆盖率到多少算够\",\n    \"类别\": \"数据\",\n    \"难度\": \"中等\",\n    \"序号\": 8\n  },\n  {\n    \"问题\": \"为什么很多团队的代码规范最后没人遵守\",\n    \"类别\": \"架构\",\n    \"难度\": \"困难\",\n    \"序号\": 9\n  },\n  {\n    \"问题\": \"移动端弱网环境下如何设计重试\",\n    \"类别\": \"工程\",\n    \"难度\": \"简单\",\n    \"序号\": 10\n  },\n  {\n    \"问题\": \"你如何决定一个功能该不该做成微服务\",\n    \"类别\": \"协作\",\n    \"难度\": \"中等\",\n    \"序号\": 11\n  },\n  {\n    \"问题\": \"日志里应该记录什么不应该记录什么\",\n    \"类别\": \"测试\",\n    \"难度\": \"困难\",\n    \"序号\": 12\n  },\n  {\n    \"问题\": \"跨时区团队怎么安排代码评审\",\n    \"类别\": \"性能\",\n    \"难度\": \"简单\",\n    \"序号\": 13\n  },\n  {\n    \"问题\": \"一个接口响应变慢你会怎么定位\",\n    \"类别\": \"安全\",\n    \"难度\": \"中等\",\n    \"序号\": 14\n  },\n  {\n    \"问题\": \"为什么幂等性在支付场景特别重要\",\n    \"类别\": \"运维\",\n    \"难度\": \"困难\",\n    \"序号\": 15\n  },\n  {\n    \"问题\": \"新人入职第一周你会让他做什么\",\n    \"类别\": \"数据\",\n    \"难度\": \"简单\",\n    \"序号\": 16\n  },\n  {\n    \"问题\": \"怎样判断一个开源依赖值得引入\",\n    \"类别\": \"架构\",\n    \"难度\": \"中等\",\n    \"序号\": 17\n  },\n  {\n    \"问题\": \"前端打包体积失控通常是什么原因\",\n    \"类别\": \"工程\",\n    \"难度\": \"困难\",\n    \"序号\": 18\n  },\n  {\n    \"问题\": \"数据迁移出错后如何回滚才安全\",\n    \"类别\": \"协作\",\n    \"难度\": \"简单\",\n    \"序号\": 19\n  },\n  {\n    \"问题\": \"你怎么看待在业务代码里写注释\",\n    \"类别\": \"测试\",\n    \"难度\": \"中等\",\n    \"序号\": 20\n  }\n]",
+  "measured": {
+    "chars": 1656,
+    "wordTokens": 160,
+    "nonSpacedRatio": 1,
+    "tailNonSpacedRatio": 1,
+    "tailLoop": {
+      "score": 0,
+      "mode": "char"
+    },
+    "scores": {
+      "REPETITION": 0.184
+    }
+  }
+}

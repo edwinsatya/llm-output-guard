@@ -1,0 +1,21 @@
+{
+  "id": "json-zh-array-valid",
+  "note": "Healthy JSON with ASCII keys and Chinese values. Because the keys are Latin letters the whole response measures a non-spaced ratio of 0.378, so TAIL_LOOP dispatches it to WORD mode -- this fixture never exercises character mode, and nothing about char-mode behaviour can be argued from it. See json-zh-keys-valid for the char-mode case. What it does cover: mixed-script structured output staying under every word-mode threshold, and a reminder that ASCII scaffolding alone can hold a mostly-Chinese payload in word mode.",
+  "options": {
+    "expectJson": true
+  },
+  "text": "[\n  {\n    \"question\": \"你在什么情况下会引入状态管理库？\",\n    \"category\": \"架构\",\n    \"difficulty\": \"简单\",\n    \"order\": 1\n  },\n  {\n    \"question\": \"你如何决定接口返回聚合结果还是让前端组合？\",\n    \"category\": \"工程\",\n    \"difficulty\": \"中等\",\n    \"order\": 2\n  },\n  {\n    \"question\": \"你在服务端渲染时怎样处理鉴权信息的传递？\",\n    \"category\": \"协作\",\n    \"difficulty\": \"困难\",\n    \"order\": 3\n  },\n  {\n    \"question\": \"你如何评估一次重构的收益？\",\n    \"category\": \"测试\",\n    \"difficulty\": \"简单\",\n    \"order\": 4\n  },\n  {\n    \"question\": \"你在代码评审里最常提出什么意见？\",\n    \"category\": \"性能\",\n    \"difficulty\": \"中等\",\n    \"order\": 5\n  },\n  {\n    \"question\": \"你怎么判断一个依赖值不值得升级？\",\n    \"category\": \"安全\",\n    \"difficulty\": \"困难\",\n    \"order\": 6\n  },\n  {\n    \"question\": \"你排查线上问题时先看哪些信号？\",\n    \"category\": \"运维\",\n    \"difficulty\": \"简单\",\n    \"order\": 7\n  },\n  {\n    \"question\": \"你如何决定哪些逻辑需要写测试？\",\n    \"category\": \"数据\",\n    \"difficulty\": \"中等\",\n    \"order\": 8\n  },\n  {\n    \"question\": \"你设计缓存时怎样确定失效策略？\",\n    \"category\": \"架构\",\n    \"difficulty\": \"困难\",\n    \"order\": 9\n  },\n  {\n    \"question\": \"你如何向同事解释一次复杂变更？\",\n    \"category\": \"工程\",\n    \"difficulty\": \"简单\",\n    \"order\": 10\n  },\n  {\n    \"question\": \"你什么时候选择先上线再优化？\",\n    \"category\": \"协作\",\n    \"difficulty\": \"中等\",\n    \"order\": 11\n  },\n  {\n    \"question\": \"你怎样判断一个抽象是过早的？\",\n    \"category\": \"测试\",\n    \"difficulty\": \"困难\",\n    \"order\": 12\n  }\n]",
+  "measured": {
+    "chars": 1275,
+    "wordTokens": 96,
+    "nonSpacedRatio": 0.378,
+    "tailNonSpacedRatio": 0.376,
+    "tailLoop": {
+      "score": 0,
+      "mode": "word"
+    },
+    "scores": {
+      "REPETITION": 0.138
+    }
+  }
+}

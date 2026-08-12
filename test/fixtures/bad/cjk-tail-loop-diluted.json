@@ -1,0 +1,23 @@
+{
+  "id": "cjk-tail-loop-diluted",
+  "category": "tail-loop",
+  "note": "Healthy English answer, then a Chinese loop. Non-spaced ratio is 0.47 over the whole response and 1.00 over its final 400 characters -- the case that forced dispatch to be measured per detector span rather than once per response. Whole-response dispatch puts the tail detector in word mode, where this scores 0.000; tail dispatch scores it at ceiling. LOW_ENTROPY is near 0 because the healthy English dominates the sample, so nothing else catches it either. The English is seven distinct paragraphs on purpose: a repeated preamble would itself be a loop, and word-mode REPETITION would flag the filler rather than the Chinese, which is exactly how the first version of this measurement went wrong.",
+  "text": "Redis pub/sub is the right primitive here. Each server subscribes to the room channel and publishes moves to it, so fan-out no longer depends on which instance a given socket happens to land on. The tradeoff is at-most-once delivery. A client reconnecting mid-game has to refetch state rather than replay what it missed, which pushes complexity into your snapshot format instead of your transport. If you need stronger guarantees you want a log, not a bus. Kafka will hold the ordered history, let late consumers catch up, and give you replay for free once partitioning is settled. Operationally the two are not comparable. A bus is a process you restart without thinking; a log has retention policy, compaction settings, disk headroom, and a consumer group layout to design. We ran the bus version in production for about eight months. Two incidents needed a human, both network partitions where subscribers stopped receiving heartbeats and nothing escalated. Migrating to a log took three weeks. Almost none of that was writing code. It went into modelling state that had previously been implicit in process memory, which nobody had written down. My advice: if replay is on the roadmap at all, start with the log. Retrofitting it means finding every place you assumed a message could be dropped, and those assumptions are rarely documented. 我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题",
+  "expect": [
+    "TAIL_LOOP"
+  ],
+  "measured": {
+    "chars": 2303,
+    "wordTokens": 226,
+    "nonSpacedRatio": 0.469,
+    "tailNonSpacedRatio": 1,
+    "tailLoop": {
+      "score": 1,
+      "mode": "char"
+    },
+    "scores": {
+      "REPETITION": 0,
+      "LOW_ENTROPY": 0
+    }
+  }
+}
