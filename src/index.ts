@@ -1,13 +1,15 @@
 export { checkOutput, assertOutput, DegenerateOutputError } from './check.js';
 export { createStreamGuard, guardStream } from './stream.js';
 /*
- * `percentile` and `findGap` are still exported here, and are removed in 1.0.0
- * -- see .changeset/one-point-oh-surface.md. They stay for now so that 0.5.0 is
- * a pure renumbering of the withdrawn 0.4.2 and nothing else: a corrective
- * re-release that also carries a quiet breaking change is the mistake it exists
- * to correct.
+ * `percentile` and `findGap` were exported here in 0.4.x and 0.5.0, and are
+ * removed as of 1.0.0. Both take a pre-sorted ascending array and return
+ * confidently wrong numbers otherwise -- fine for the internal callers they
+ * were written for, and a poor thing to promise under a freeze. They stay
+ * exported from `./calibrate.js` for `summarise` and the tests, which is not a
+ * path any consumer can import: the package `exports` map admits the three
+ * entry points and `package.json`, and nothing else.
  */
-export { calibrate, summarise, percentile, findGap } from './calibrate.js';
+export { calibrate, summarise } from './calibrate.js';
 export { presets } from './presets.js';
 export type { CheckOptions, Verdict, Reason, ReasonCode, TokenMode } from './types.js';
 export type { StreamGuard, StreamGuardOptions, GuardStreamOptions } from './stream.js';

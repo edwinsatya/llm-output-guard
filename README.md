@@ -526,7 +526,9 @@ output starts to reach.
 
 ## Stability
 
-What semver means for this package specifically.
+What semver means for this package specifically. These rules bind from **1.0.0**
+onward; under `0.x` they described an intent, and the surface was frozen — export
+by export — in the 1.0.0 release.
 
 **The public API is:** everything exported from `llm-output-guard`, plus
 `outputGuard` / `OutputGuardOptions` / `DegenerateAction` from `./ai-sdk` and
@@ -534,7 +536,8 @@ What semver means for this package specifically.
 Each subpath is its own contract; the two adapters share an internal base type
 today and are free to diverge, so an option added to one is not a promise about
 the other. Anything not exported from those three entry points is internal, has
-no stability guarantee, and may move in any release.
+no stability guarantee, and may move in any release. The list is asserted in
+`test/surface.test.ts`, so an export cannot join it by accident.
 
 **Threshold and preset values are behaviour, not implementation.** This is the
 interesting case, so it gets a rule of its own:
