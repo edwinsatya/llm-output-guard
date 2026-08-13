@@ -74,7 +74,7 @@ function mockTransport(text: string, finishReason: 'stop' | 'length' = 'stop', c
     let index = 0;
     const stream = new ReadableStream<Uint8Array>({
       pull(controller) {
-        // Everything enqueued here is a chunk the provider generated and billed.
+        // Everything enqueued here is a chunk this mock was asked to produce.
         if (index > pieces.length) {
           controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
           return controller.close();
@@ -165,7 +165,9 @@ describe('withOutputGuard on a real OpenAI client', () => {
 
     /*
      * The claim that matters. Not "the guard fired" -- that the connection
-     * closed, so the provider stopped generating and stopped billing.
+     * closed, which is the precondition for a real provider stopping. Whether
+     * it then stops billing immediately is the provider's business and is not
+     * something a mock can show.
      */
     it('cancels the HTTP response body, not just the iteration', async () => {
       const { state, fetchImpl } = mockTransport(LOOPING);
@@ -189,13 +191,18 @@ describe('withOutputGuard on a real OpenAI client', () => {
     });
 
     /*
-     * The saving, measured against a baseline rather than asserted. `sent` is
-     * chunks the mock server was actually asked to produce, so the unguarded
-     * number is what the loop costs today and the guarded number is what it
-     * costs with the guard on. The README quotes this figure; it is printed so
-     * a change in it is visible rather than silently restated.
+     * The README's figure, measured against a baseline rather than asserted.
+     * `sent` is chunks the mock server was asked to produce, so this compares
+     * an unguarded loop with a guarded one under identical conditions.
+     *
+     * It is a transport-behaviour figure, not a billing one. A real provider
+     * adds buffering, its own chunking, and server-side generation that may
+     * have run ahead of what it has sent -- none of which a mock has. Quote it
+     * as "chunks not produced after the connection closed", which is what it
+     * measures, and never as tokens saved. It is printed so that a change in it
+     * is visible rather than silently restated in the docs.
      */
-    it('measures how much of the loop is never generated', async () => {
+    it('measures chunks not produced after the connection closed', async () => {
       const baseline = mockTransport(LOOPING);
       const plain = clientWith(baseline.fetchImpl as never);
       const full = await plain.chat.completions.create({ ...params, stream: true });
@@ -217,7 +224,8 @@ describe('withOutputGuard on a real OpenAI client', () => {
       // eslint-disable-next-line no-console
       console.log(
         `  openai stream guard: ${guarded.state.sent}/${baseline.state.sent} chunks generated ` +
-          `-> ${Math.round(saved * 100)}% never generated`,
+          `-> ${Math.round(saved * 100)}% not produced after the connection closed ` +
+          `(mock transport; not a billing figure)`,
       );
       expect(saved).toBeGreaterThan(0.5);
     });

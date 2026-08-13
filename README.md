@@ -102,30 +102,35 @@ for await (const chunk of guardStream(stream, {
 }
 ```
 
-Against the degenerate fixtures, aborting on the first failed check ends the
-generation after **8-52%** of the tokens the model would otherwise have
-produced:
+Against the degenerate fixtures, the guard reports a failure after **8-52%** of
+each fixture's characters:
 
 ```
-repetition-word-stutter        caught at  240/2999 chars ->  92% never generated
-repetition-clause-loop         caught at  240/1680 chars ->  86% never generated
-tail-loop-after-good-start     caught at  640/1569 chars ->  59% never generated
-tail-loop-trailing-phrase      caught at  640/1238 chars ->  48% never generated
+repetition-word-stutter        caught at  240/2999 chars ->  92% not yet read
+repetition-clause-loop         caught at  240/1680 chars ->  86% not yet read
+tail-loop-after-good-start     caught at  640/1569 chars ->  59% not yet read
+tail-loop-trailing-phrase      caught at  640/1238 chars ->  48% not yet read
 ```
+
+**Read that as detection latency, not as a saving.** It is measured by feeding
+fixture strings to `createStreamGuard` in-process — there is no provider and no
+connection involved, so it says how early the signal is available and nothing
+about tokens or cost. What you do with the signal is the part that saves money,
+and how much it saves depends on your provider.
 
 Zero of the healthy fixtures trip it, and the watching costs **~0.05ms per
 check** — around 0.7ms across a 5,500 character response, flat as the stream
 grows rather than quadratic in its length.
 
 **Those numbers are measured on Latin-script fixtures and do not carry over
-unchanged.** For Chinese, Japanese and Thai the same measurement gives
-**0-85%**, and the spread is the whole story:
+unchanged.** For Chinese, Japanese and Thai the same in-process measurement
+gives **0-85%**, and the spread is the whole story:
 
 ```
-cjk-tail-loop-th-nopunct       caught at  240/1640 chars ->  85% never generated
-cjk-tail-loop-ja-nopunct       caught at  240/800  chars ->  70% never generated
-cjk-tail-loop-zh-nopunct       caught at  240/640  chars ->  63% never generated
-cjk-tail-loop-diluted          caught at 1840/2303 chars ->  20% never generated
+cjk-tail-loop-th-nopunct       caught at  240/1640 chars ->  85% not yet read
+cjk-tail-loop-ja-nopunct       caught at  240/800  chars ->  70% not yet read
+cjk-tail-loop-zh-nopunct       caught at  240/640  chars ->  63% not yet read
+cjk-tail-loop-diluted          caught at 1840/2303 chars ->  20% not yet read
 cjk-tail-loop-short            never mid-stream (128 chars, under the warmup)
 ```
 
@@ -170,9 +175,11 @@ const model = wrapLanguageModel({
 ```
 
 On `streamText` this cancels the provider's stream mid-generation. Driven
-through the real SDK against a looping model, the provider was asked for **17
-of 137 parts** before the guard cut it off — the rest was never generated and
-never billed. On `generateText` the tokens are already bought, so it throws
+through the real SDK over a **mock part stream**, the source was pulled for **17
+of 137 parts** before the guard cut it off. That figure is parts never requested
+from a stub, not tokens never billed by a provider: the SDK's cancellation path
+is exercised for real, the thing on the other end of it is not. On
+`generateText` the tokens are already bought, so it throws
 `DegenerateOutputError` instead, which your fallback layer can act on.
 
 `onDegenerate` takes `'throw'` (default, also cancels the stream), `'abort'`
@@ -239,12 +246,20 @@ const stream = await client.chat.completions.create({ model, messages, stream: t
 for await (const chunk of stream) process.stdout.write(chunk.choices[0]?.delta?.content ?? '');
 ```
 
-Against a looping model driven through the real SDK over a mock transport, the
-provider was asked for **16 of 135 chunks — 88% never generated**. That number is
-measured at the transport, not at the loop: the test counts what the server was
-actually asked to produce and asserts the response body was cancelled, because a
-guard that stops iterating while the connection keeps streaming is still billed
-in full.
+Driven through the real SDK against a looping model over a **mock transport**,
+the response body was cancelled after **16 of 135 chunks** were generated — 88%
+of the chunks were never produced.
+
+**What that number is, precisely:** chunks a mock server was never asked to
+produce after the client closed the connection, measured against an unguarded
+baseline of the full 135. It is stronger than a "did abort fire" assertion —
+the test observes cancellation at the response body, so a guard that stopped
+iterating while the connection stayed open would fail it. It is **not** a
+billing figure. A real provider sits behind buffering, its own chunking, and
+server-side generation that may already have run ahead of what it has sent;
+none of that exists in the mock. Treat 88% as evidence that cancellation
+reaches the transport promptly, and measure your own provider before putting a
+number in a budget.
 
 `onDegenerate` and `onVerdict` are the same options as the Vercel adapter, from
 the same type — `'throw'` (default, also cancels the stream), `'abort'` (stop
@@ -508,6 +523,53 @@ If you serve mostly non-spaced-script traffic and that cost matters more to you
 than the false-positive risk, lower `maxCharTailLoop` toward 0.5 — and calibrate
 it against your own traffic first, because that is the range healthy structured
 output starts to reach.
+
+## Stability
+
+What semver means for this package specifically.
+
+**The public API is:** everything exported from `llm-output-guard`, plus
+`outputGuard` / `OutputGuardOptions` / `DegenerateAction` from `./ai-sdk` and
+`withOutputGuard` / `OutputGuardOptions` / `DegenerateAction` from `./openai`.
+Each subpath is its own contract; the two adapters share an internal base type
+today and are free to diverge, so an option added to one is not a promise about
+the other. Anything not exported from those three entry points is internal, has
+no stability guarantee, and may move in any release.
+
+**Threshold and preset values are behaviour, not implementation.** This is the
+interesting case, so it gets a rule of its own:
+
+| Change | Release type |
+|---|---|
+| Lowering a default threshold, or changing a preset's numbers | **major** |
+| Adding a new detector that runs by default | **major** |
+| Adding a new *option*, defaulted so nothing changes | minor |
+| Adding a new detector that is opt-in | minor |
+| Making an existing detector strictly more accurate on its own axis | minor |
+| Docs, internals, performance, fixing a detector that was returning a wrong score | patch |
+
+The reasoning: a threshold change does not break your build, it changes which of
+your production responses get discarded and retried. That is a larger event than
+a signature change, and it is invisible until your traffic hits it. A number in
+`presets.chat` is part of the contract in the same way a function name is.
+
+**Semver does not cover:** the exact scores a detector returns (only their
+direction and the thresholds that act on them), the contents of the fixture
+corpus, `message` strings in `Reason`, or the output format of the `calibrate`
+CLI's human-readable report. `--json` output *is* covered.
+
+**Peer ranges** are narrowed only in a major. They are verified rather than
+assumed — `npm run check:peers` installs the packed tarball against each end of
+each declared range and both typechecks and runs the adapter.
+
+**Why this is written down.** Version 0.4.2 shipped the `ai` peer narrowing, the
+new `./openai` subpath, and character-mode `TAIL_LOOP` — one breaking change, one
+feature, and one behaviour change — under a **patch** number, which every default
+version range upgrades into automatically. It was withdrawn from npm within the
+72-hour unpublish window and re-released as 0.5.0, where `^0.4.1` correctly
+resolves away from it. The rule it broke is the one in the table above: threshold
+and preset changes are behaviour changes, and behaviour changes are never
+patches.
 
 ## Limitations
 

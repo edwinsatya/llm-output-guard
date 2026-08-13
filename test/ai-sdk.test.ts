@@ -44,8 +44,9 @@ function partsStream(text: string, finishReason: FinishReason = { unified: 'stop
       pull(controller) {
         const next = chunks.shift();
         if (!next) return controller.close();
-        // Only count what the provider actually had to produce, so a
-        // cancelled stream shows up as tokens never generated.
+        // Parts this stub was actually pulled for. A cancelled stream shows
+        // up as parts never requested -- of a mock, so it measures the SDK
+        // cancellation path, not tokens a provider never billed.
         generated += 1;
         controller.enqueue(next);
       },
