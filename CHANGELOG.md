@@ -1,5 +1,33 @@
 # llm-output-guard
 
+## 1.0.1
+
+### Patch Changes
+
+- Document every public export by name. No code changes.
+
+  The detectors table listed reason codes and promised that "every detector is
+  exported on its own", but never gave the function names — nothing told a reader
+  that `REPETITION` is reached through `repetitionScore`. Fourteen of the
+  twenty-three exports were unnamed anywhere in the README. At 1.0 those names are
+  the most stable thing in the package, so being the least discoverable part of it
+  was the wrong way round.
+
+  The table now carries an `Exported as` column, followed by the four signatures
+  that do not follow `(text, options?) -> number`: `shortnessScore` takes its
+  minimum positionally, `stripFence` returns a string, `jsonScore` and
+  `tailLoopDetail` return detail objects, and `supportedLanguages` is a value
+  rather than a function.
+
+  `calibrate` and `summarise` were documented only as a CLI. The programmatic form
+  is now written down — the `Summary` fields, how logging `modes` segments the
+  result into one summary per code and tokenizer, and the note that `caveats` is
+  worth reading before `suggested`, since a suggested threshold carries no warning
+  of its own.
+
+  Published so the npm page matches the repo: a package page renders the README
+  baked into its tarball, so documentation only reaches npm through a release.
+
 ## 1.0.0
 
 > **Upgrading from 0.5.0: the only break is two removed exports.** If you do not
@@ -12,8 +40,8 @@
 > site and hoping.
 >
 > **What 1.0.0 is** is the point where **Stability** in the README stops being an
-> intent and starts binding. The rule to read before you pin: *threshold and
-> preset value changes ship in a major here*, because they do not break your
+> intent and starts binding. The rule to read before you pin: _threshold and
+> preset value changes ship in a major here_, because they do not break your
 > build — they change which of your production responses get discarded and
 > retried, which is invisible until your traffic hits it. So `^1.0.0` will not
 > quietly start rejecting traffic it used to pass.
