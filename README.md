@@ -318,18 +318,34 @@ gives you a number that describes neither.
 
 ## Detectors
 
-| Code | Catches | Signal |
-|---|---|---|
-| `EMPTY` | Whitespace, lone punctuation, `{}`, empty fences | Content presence |
-| `TOO_SHORT` | Non-empty but useless | Length vs. minimum |
-| `REPETITION` | Loops and stutters | Duplicate word n-gram fraction |
-| `TAIL_LOOP` | Good start, then a stuck ending | Periodicity in the trailing window, over words or characters |
-| `LOW_ENTROPY` | Character-level collapse, token artifacts | Hand-rolled LZ77 compression ratio |
-| `TRUNCATED` | Cut off mid-thought | `finish_reason`, unbalanced fences/brackets |
-| `INVALID_JSON` | Prose around the payload, missing keys | Parse + key contract |
-| `LANG_MISMATCH` | Answered in the wrong language | Function-word profile (coarse, opt-in) |
+| Code | Catches | Signal | Exported as |
+|---|---|---|---|
+| `EMPTY` | Whitespace, lone punctuation, `{}`, empty fences | Content presence | `emptinessScore` |
+| `TOO_SHORT` | Non-empty but useless | Length vs. minimum | `shortnessScore` |
+| `REPETITION` | Loops and stutters | Duplicate word n-gram fraction | `repetitionScore` |
+| `TAIL_LOOP` | Good start, then a stuck ending | Periodicity in the trailing window, over words or characters | `tailLoopScore`, `tailLoopDetail` |
+| `LOW_ENTROPY` | Character-level collapse, token artifacts | Hand-rolled LZ77 compression ratio | `compressibilityScore`, `compressionRatio` |
+| `TRUNCATED` | Cut off mid-thought | `finish_reason`, unbalanced fences/brackets | `truncationScore` |
+| `INVALID_JSON` | Prose around the payload, missing keys | Parse + key contract | `jsonScore`, `stripFence` |
+| `LANG_MISMATCH` | Answered in the wrong language | Function-word profile (coarse, opt-in) | `languageMismatchScore`, `languageProfile`, `supportedLanguages` |
 
-Every detector is exported on its own if you only want one.
+Every detector is exported on its own if you only want one, and every name in
+that last column is covered by semver — see **Stability**.
+
+```ts
+import { repetitionScore, tailLoopDetail, stripFence } from 'llm-output-guard';
+
+repetitionScore(text);                  // 0..1, higher is worse
+repetitionScore(text, { n: 4 });        // n-gram size
+tailLoopDetail(text, { mode: 'char' }); // { score, mode } — which tokenizer ran
+stripFence('```json\n{"a":1}\n```');    // '{"a":1}'
+```
+
+Each takes `(text, options?)` and returns a `0..1` score, with three exceptions
+worth knowing: `shortnessScore(text, minChars)` takes its minimum positionally,
+`stripFence` returns a string, and `jsonScore` / `tailLoopDetail` return a detail
+object rather than a bare number. `supportedLanguages` is a value, not a
+function — the array `['id', 'en', 'es']`.
 
 ## Presets
 
@@ -389,6 +405,42 @@ rate. The `gap` line is the exception worth trusting, because a hole between
 the bulk and a cluster of outliers is real separation observed in your data
 rather than an assumption about rarity — and when that hole rests on one or
 two samples, the report says so.
+
+### The same thing, as a function
+
+The CLI is a wrapper. If your scores already live somewhere the shell cannot
+reach them — a metrics store, a warehouse query, a test — call `calibrate`
+directly. It takes the same flat objects the JSONL format describes:
+
+```ts
+import { calibrate } from 'llm-output-guard';
+
+const { n, summaries } = calibrate(
+  [
+    { REPETITION: 0.03, TAIL_LOOP: 0 },
+    { REPETITION: 0.91, TAIL_LOOP: 0.88, modes: { TAIL_LOOP: 'char' } },
+    // ...one entry per logged verdict
+  ],
+  { falsePositiveRate: 0.001 },
+);
+
+for (const s of summaries) {
+  s.code;               // 'REPETITION'
+  s.mode;               // 'word' | 'char', when the samples recorded one
+  s.suggested;          // threshold flagging falsePositiveRate of this sample
+  s.gap;                // { below, above, count, share } | null — stronger evidence
+  s.distribution;       // { n, nonZero, min, max, p50, p90, p99, p999 }
+  s.caveats;            // everything that makes `suggested` untrustworthy
+}
+```
+
+`modes` rides along in the same object and is not read as a score. Log it, and
+`summaries` comes back segmented — one entry per `code`+`mode` — for the reason
+in the paragraph above. `summarise(code, scores, options)` is exported too, for
+when you have one detector's numbers already grouped.
+
+**Read `caveats` before `suggested`.** It is where a sample too small for the
+requested rate says so, and a `suggested` number carries no warning of its own.
 
 ## On thresholds
 
