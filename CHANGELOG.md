@@ -1,8 +1,89 @@
 # llm-output-guard
 
-## 1.1.0
+## 1.2.0
 
 ### Minor Changes
+
+- 4a3241d: Add a `./anthropic` adapter for the Messages API.
+
+  `withOutputGuard(new Anthropic(), presets.chat)` guards `messages.create` in both
+  shapes, with the same options as the other two adapters. Claude users previously
+  had to hand-roll the guard around every call.
+
+  Two things are specific to this API, and both are the kind of detail that turns a
+  guard into a false-positive generator if it is got wrong:
+
+  **Extended thinking is not read as the answer.** `thinking` blocks are the
+  model's reasoning, are frequently longer than the answer, and repeat themselves
+  as a matter of course while working a problem. Folding them into the measured
+  text would raise every repetition score on every thinking response and flag the
+  ones that thought hardest, so only `text` blocks are measured — and a `thinking`
+  block is not mistaken for a tool call either, which would silently put the guard
+  into preamble mode for most modern responses.
+
+  **Both length stops map to `TRUNCATED`.** `max_tokens` was already one of the
+  stop reasons `truncationScore` treats as authoritative;
+  `model_context_window_exceeded` is the same event under a different name and is
+  normalised in the adapter rather than by widening the detector's own set, which
+  would spend a shared vocabulary on one provider's spelling. `refusal` is
+  deliberately not truncation: a refusal is a complete response that says no, which
+  is a content judgement this package does not make.
+
+  `messages.stream()` and `messages.batches` are left plainly unguarded and
+  documented, on the same reasoning as `./openai`'s `responses.stream()`.
+
+  `@anthropic-ai/sdk` is an optional peer, declared `>=0.60.0 <1.0.0` and verified
+  at 0.60.0, 0.90.0 and 0.117.1 — each installing the packed tarball and running
+  the adapter against a real client over a mock transport, not merely typechecking.
+  The main entry point still has no peers and the package still has no
+  dependencies, which `test/surface.test.ts` now asserts rather than trusting.
+
+  Internally, the client-wrapping machinery moved to `internal/proxy-guard.ts` and
+  is shared with `./openai` — the `APIPromise` proxying, the transport-level abort
+  and the tool-call handling are identical between the two SDKs, and two copies of
+  them is how one gets fixed and the other does not. `internal/` remains outside
+  the public API and outside semver.
+
+- 4a3241d: Add a `schema` option, accepting any Standard Schema validator.
+
+  `requiredKeys` only ever asked whether a name was present. A model returning
+  `{ "score": "very good" }` where you wanted a number satisfied it completely and
+  still broke everything downstream that did arithmetic — the check passed, the
+  response was useless, and nothing said so.
+
+  ```ts
+  const verdict = checkOutput(raw, { ...presets.strictJson, schema: Review });
+  ```
+
+  Zod 4, Valibot and ArkType all implement [Standard Schema](https://standardschema.dev),
+  and so does anything else that wants to. **This adds no dependency:** the spec is
+  types-only, so the interface is vendored in `src/standard-schema.ts` and the
+  validator is one you already have. The package still installs with nothing behind
+  it, and the main entry point still has no peers.
+
+  On success `Verdict.json` is the schema's _output_ rather than the raw parse, so
+  defaults, coercions and transforms are applied and the value matches the type you
+  declared. On failure the reason is `INVALID_JSON` with the failing path in the
+  message — `score: Expected number, received string`. The same code as a missing
+  key or an unparseable payload, because it wants the same handling: retry, or fall
+  through to another provider. Giving it a code of its own would have widened a
+  frozen union and split existing handling for nothing.
+
+  `requiredKeys` and `schema` compose, and keys are checked first, so a missing key
+  is still reported as a missing key rather than as whatever the schema calls it.
+
+  **A schema must validate synchronously**, and one that does not throws a
+  `TypeError` saying so. `checkOutput` being synchronous is a load-bearing promise
+  rather than an implementation detail — it is what makes the guard safe on a hot
+  path and trivial to test. The alternative to throwing was to silently pass, which
+  would disable the check the caller asked for, or to silently fail, which would
+  blame the model for the caller's wiring. In practice this is reached only by a
+  schema carrying an async refinement. It remains true that nothing throws about a
+  _response_.
+
+  Tested against all three libraries rather than one, because the spec is types-only
+  and they disagree at runtime about issue paths — Valibot and ArkType return
+  segment objects where Zod returns bare keys.
 
 - 2b06dcb: Guard `responses.create` on the `openai` adapter.
 
@@ -38,6 +119,30 @@
   No new exports, options or thresholds: `./openai`'s public surface is unchanged.
 
 ### Patch Changes
+
+- 4a3241d: Fix type resolution for CommonJS TypeScript consumers.
+
+  The `exports` map declared `types` once per subpath, pointing at the ESM `.d.ts`.
+  From a CommonJS project using `moduleResolution: node16`, TypeScript resolved
+  that ES-module declaration and then refused it — `TS1479: the referenced file is
+an ECMAScript module and cannot be imported with 'require'` — on every entry
+  point, including the root.
+
+  Nothing was wrong at runtime: `require('llm-output-guard')` always returned the
+  real `.cjs`. It broke the _build_ of any CJS TypeScript consumer, which is a
+  worse place to find out and an easy one to mistake for a problem in your own
+  tsconfig.
+
+  Each subpath now declares types per condition, so `import` resolves `.d.ts` and
+  `require` resolves `.d.cts`. Both declaration flavours were already being built
+  and shipped in the tarball; the map simply never pointed at the second one.
+
+  Verified across six combinations — CommonJS and ESM consumers, each under
+  `node16`, `nodenext` and `bundler` — and asserted in `test/surface.test.ts`,
+  because the single-`types` form looks equivalent and is not.
+
+  Found while adding `./anthropic`, which would otherwise have shipped as a fourth
+  entry point with the same defect.
 
 - 2b06dcb: Stop failing every tool call as `EMPTY`.
 
