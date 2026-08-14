@@ -1,3 +1,5 @@
+import type { StandardSchemaV1 } from './standard-schema.js';
+
 export type ReasonCode =
   | 'EMPTY'
   | 'TOO_SHORT'
@@ -94,6 +96,24 @@ export interface CheckOptions {
   allowJsonFence?: boolean;
   /** Top-level keys the JSON payload must contain. */
   requiredKeys?: string[];
+  /**
+   * A Standard Schema validator the JSON payload must satisfy -- Zod 4,
+   * Valibot, ArkType, or your own. Requires `expectJson`.
+   *
+   * Strictly stronger than `requiredKeys`: that asks only whether a name is
+   * present, and a model returning `{ score: "very good" }` where you wanted a
+   * number satisfies it. The two compose, and keys are checked first, so a
+   * missing key is still reported as a missing key.
+   *
+   * On success `Verdict.json` is the schema's *output* -- defaults, coercions
+   * and transforms applied -- rather than the raw parse.
+   *
+   * **Must validate synchronously.** `checkOutput` is synchronous by design, so
+   * a schema carrying an async refinement throws a `TypeError` rather than
+   * silently passing. Everything Zod, Valibot and ArkType produce otherwise is
+   * synchronous.
+   */
+  schema?: StandardSchemaV1;
   /** Expected language code ('id' | 'en' | 'es'). Off by default. */
   expectLang?: string | null;
   /** Language-mismatch threshold. Default 0.6. */

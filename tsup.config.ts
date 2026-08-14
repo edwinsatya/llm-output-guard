@@ -16,7 +16,7 @@ const shared = {
 export default defineConfig([
   {
     ...shared,
-    entry: ['src/index.ts', 'src/ai-sdk.ts', 'src/openai.ts'],
+    entry: ['src/index.ts', 'src/ai-sdk.ts', 'src/openai.ts', 'src/anthropic.ts'],
     dts: true,
     clean: true,
   },

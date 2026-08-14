@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import * as root from '../src/index.js';
 import * as aiSdk from '../src/ai-sdk.js';
 import * as openai from '../src/openai.js';
+import * as anthropic from '../src/anthropic.js';
 
 /**
  * The public surface, frozen at 1.0.0.
@@ -66,6 +67,7 @@ describe('public surface', () => {
   it('exports one function from each adapter subpath', () => {
     expect(names(aiSdk)).toEqual(['outputGuard']);
     expect(names(openai)).toEqual(['withOutputGuard']);
+    expect(names(anthropic)).toEqual(['withOutputGuard']);
   });
 
   /**
@@ -75,9 +77,60 @@ describe('public surface', () => {
    * shared base today and are free to diverge without widening or splitting a
    * frozen type.
    */
-  it('admits four entry points and no deep imports', () => {
+  it('admits five entry points and no deep imports', () => {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-    expect(Object.keys(pkg.exports).sort()).toEqual(['.', './ai-sdk', './openai', './package.json']);
+    expect(Object.keys(pkg.exports).sort()).toEqual([
+      '.',
+      './ai-sdk',
+      './anthropic',
+      './openai',
+      './package.json',
+    ]);
+  });
+
+  /**
+   * Every adapter subpath is an optional peer, and the main entry point has
+   * none. This is the zero-dependency claim in assertable form: `dependencies`
+   * must stay empty no matter how many providers get adapters, and a peer that
+   * was not marked optional would make `npm i llm-output-guard` start pulling
+   * an SDK nobody asked for.
+   */
+  it('has no runtime dependencies and only optional peers', () => {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    expect(pkg.dependencies ?? {}).toEqual({});
+    for (const name of Object.keys(pkg.peerDependencies)) {
+      expect(pkg.peerDependenciesMeta?.[name]?.optional, `${name} is not optional`).toBe(true);
+    }
+  });
+
+  /**
+   * Types must be declared *per condition*, not once for both.
+   *
+   * A single top-level `types` pointing at the ESM `.d.ts` type-checks fine
+   * from an ESM consumer and fails from a CommonJS one under
+   * `moduleResolution: node16`, with TS1479: it resolves the ES-module
+   * declaration and then objects that a `require` cannot load it. The runtime
+   * was always correct -- `require` returned the real `.cjs` -- so this broke
+   * nothing at execution time and broke the build of every CJS TypeScript
+   * consumer, which is a worse place to find out.
+   *
+   * Asserted rather than remembered because the shape is easy to "tidy" back:
+   * the short form looks equivalent and is not.
+   */
+  it('declares types per condition, so CJS consumers resolve .d.cts', () => {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+
+    for (const [subpath, entry] of Object.entries<Record<string, Record<string, string>>>(
+      pkg.exports,
+    )) {
+      if (subpath === './package.json') continue;
+
+      expect(Object.keys(entry).sort(), `${subpath} conditions`).toEqual(['import', 'require']);
+      expect(entry.import.types, `${subpath} import types`).toMatch(/\.d\.ts$/);
+      expect(entry.require.types, `${subpath} require types`).toMatch(/\.d\.cts$/);
+      expect(entry.import.default, `${subpath} import default`).toMatch(/\.js$/);
+      expect(entry.require.default, `${subpath} require default`).toMatch(/\.cjs$/);
+    }
   });
 });
 
@@ -89,6 +142,7 @@ describe('public surface', () => {
  */
 export type {
   CheckOptions,
+  StandardSchemaV1,
   Verdict,
   Reason,
   ReasonCode,
@@ -121,3 +175,8 @@ export type {
   OutputGuardOptions as OpenAIOutputGuardOptions,
   DegenerateAction as OpenAIDegenerateAction,
 } from '../src/openai.js';
+
+export type {
+  OutputGuardOptions as AnthropicOutputGuardOptions,
+  DegenerateAction as AnthropicDegenerateAction,
+} from '../src/anthropic.js';

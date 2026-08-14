@@ -137,12 +137,23 @@ export function checkOutput(
     const result = jsonScore(text, {
       allowFence: opts.allowJsonFence,
       requiredKeys: opts.requiredKeys,
+      schema: opts.schema,
     });
     parsedJson = result.value;
+
+    /*
+     * One code for three ways of failing the same contract: the caller asked
+     * for a payload of a given shape and did not get one. A schema mismatch
+     * wants exactly the handling `INVALID_JSON` already gets -- retry, or fall
+     * through to another provider -- so giving it a code of its own would widen
+     * a frozen union and split existing handling for no gain.
+     */
     add('INVALID_JSON', result.score, 0,
       result.reason === 'missing-keys'
         ? `JSON is missing required keys: ${result.missingKeys?.join(', ')}.`
-        : 'Response is not parseable JSON.');
+        : result.reason === 'schema'
+          ? `JSON does not match the schema: ${result.issues?.join('; ')}.`
+          : 'Response is not parseable JSON.');
   }
 
   if (opts.expectLang) {

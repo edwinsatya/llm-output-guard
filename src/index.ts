@@ -11,6 +11,7 @@ export { createStreamGuard, guardStream } from './stream.js';
  */
 export { calibrate, summarise } from './calibrate.js';
 export { presets } from './presets.js';
+export type { StandardSchemaV1 } from './standard-schema.js';
 export type { CheckOptions, Verdict, Reason, ReasonCode, TokenMode } from './types.js';
 export type { StreamGuard, StreamGuardOptions, GuardStreamOptions } from './stream.js';
 export type {

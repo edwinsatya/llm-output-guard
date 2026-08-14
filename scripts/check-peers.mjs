@@ -218,6 +218,141 @@ const clientWith = (fetchImpl, options) =>
 }
 `;
 
+const ANTHROPIC_PROBE_TS = `
+import Anthropic from '@anthropic-ai/sdk';
+import { withOutputGuard, type OutputGuardOptions } from 'llm-output-guard/anthropic';
+import { presets, type Verdict } from 'llm-output-guard';
+
+export const client = withOutputGuard(new Anthropic({ apiKey: 'x' }), {
+  ...presets.chat,
+  onDegenerate: 'abort',
+});
+
+const options: OutputGuardOptions = {
+  ...presets.chat,
+  onDegenerate: 'ignore',
+  onVerdict: (verdict: Verdict, context: { streaming: boolean }) =>
+    void [verdict.ok, context.streaming, verdict.modes],
+};
+export const guarded = withOutputGuard(new Anthropic({ apiKey: 'x' }), options);
+`;
+
+/**
+ * As with the OpenAI probe, this drives a real client over a mock transport so
+ * cancellation is observed at the response body rather than at our iteration.
+ *
+ * The `event:` line in the SSE below is load-bearing and is the reason this
+ * probe cannot be shared with OpenAI's: Anthropic's parser dispatches on it,
+ * where OpenAI's reads a `type` inside `data:`. A mock emitting only `data:`
+ * yields nothing here, and every assertion would pass against an empty stream.
+ */
+const ANTHROPIC_PROBE_MJS = `
+import Anthropic from '@anthropic-ai/sdk';
+import { withOutputGuard } from 'llm-output-guard/anthropic';
+import assert from 'node:assert/strict';
+
+const HEALTHY =
+  'Redis pub/sub is the right primitive here. Each server subscribes to the room ' +
+  'channel and publishes moves to it, so fan-out no longer depends on which instance ' +
+  'a given socket happens to land on. The tradeoff is at-most-once delivery, so a ' +
+  'client reconnecting mid-game refetches state rather than replaying it.';
+const LOOPING = 'Your strongest area is TypeScript. ' + 'You should add tests to this repo. '.repeat(60);
+
+const body = (text, stopReason) => ({
+  id: 'msg', type: 'message', role: 'assistant', model: 'mock',
+  content: [{ type: 'text', text }], stop_reason: stopReason, stop_sequence: null,
+  usage: { input_tokens: 1, output_tokens: 1 },
+});
+
+function transport(text, stopReason = 'end_turn') {
+  const events = [['message_start', { type: 'message_start', message: body('', null) }],
+                  ['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }]];
+  for (let i = 0; i < text.length; i += 16) {
+    events.push(['content_block_delta',
+      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: text.slice(i, i + 16) } }]);
+  }
+  events.push(['content_block_stop', { type: 'content_block_stop', index: 0 }]);
+  events.push(['message_delta', { type: 'message_delta', delta: { stop_reason: stopReason, stop_sequence: null }, usage: {} }]);
+  events.push(['message_stop', { type: 'message_stop' }]);
+
+  const state = { sent: 0, total: events.length, cancelled: false };
+  const fetchImpl = async (url, init) => {
+    if (JSON.parse(String(init?.body ?? '{}')).stream !== true) {
+      state.sent = state.total;
+      return new Response(JSON.stringify(body(text, stopReason)),
+        { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    let i = 0;
+    const stream = new ReadableStream({
+      pull(c) {
+        if (i >= events.length) return c.close();
+        const [event, data] = events[i];
+        state.sent += 1;
+        c.enqueue(new TextEncoder().encode('event: ' + event + '\\ndata: ' + JSON.stringify(data) + '\\n\\n'));
+        i += 1;
+      },
+      cancel() { state.cancelled = true; },
+    });
+    return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  };
+  return { state, fetchImpl };
+}
+
+const params = { model: 'mock', max_tokens: 1024, messages: [{ role: 'user', content: 'hi' }] };
+const clientWith = (fetchImpl, options) =>
+  withOutputGuard(new Anthropic({ apiKey: 'test', fetch: fetchImpl, maxRetries: 0 }), options);
+
+// non-streaming: healthy passes, looping throws
+{
+  const { fetchImpl } = transport(HEALTHY);
+  const message = await clientWith(fetchImpl, {}).messages.create(params);
+  assert.equal(message.content[0].text, HEALTHY, 'healthy message was altered');
+}
+{
+  const { fetchImpl } = transport(LOOPING, 'max_tokens');
+  const err = await clientWith(fetchImpl, { maxRepetition: 0.4, minLength: 12 })
+    .messages.create(params).then(() => null, (e) => e);
+  assert.ok(err && err.name === 'DegenerateOutputError', 'a looping message was not flagged');
+}
+
+// streaming: healthy intact and uncancelled
+{
+  const { state, fetchImpl } = transport(HEALTHY);
+  const stream = await clientWith(fetchImpl, {}).messages.create({ ...params, stream: true });
+  let text = '';
+  for await (const e of stream) {
+    if (e.type === 'content_block_delta' && e.delta.type === 'text_delta') text += e.delta.text;
+  }
+  assert.equal(text, HEALTHY, 'healthy stream was not forwarded intact');
+  assert.equal(state.cancelled, false, 'healthy stream was cancelled');
+}
+
+// streaming: the claim -- the response body is cancelled, early
+{
+  const { state, fetchImpl } = transport(LOOPING);
+  const stream = await clientWith(fetchImpl, { maxRepetition: 0.4, maxTailLoop: 0.5, minLength: 12, onDegenerate: 'abort' })
+    .messages.create({ ...params, stream: true });
+  for await (const _ of stream) { /* drain */ }
+  await new Promise((r) => setTimeout(r, 20));
+  assert.ok(state.cancelled, 'the response body was never cancelled -- tokens still billed');
+  assert.ok(state.sent < state.total, 'the whole stream was generated; nothing was saved');
+  console.log('    runtime ok -- response body cancelled at ' + state.sent + '/' + state.total + ' events');
+}
+
+// a tool call is not an empty response
+{
+  const toolBody = {
+    id: 'msg', type: 'message', role: 'assistant', model: 'mock',
+    content: [{ type: 'tool_use', id: 'toolu_1', name: 'get_weather', input: {} }],
+    stop_reason: 'tool_use', stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 },
+  };
+  const fetchImpl = async () => new Response(JSON.stringify(toolBody),
+    { status: 200, headers: { 'content-type': 'application/json' } });
+  const ok = await clientWith(fetchImpl, {}).messages.create(params).then(() => true, () => false);
+  assert.ok(ok, 'a healthy tool call was failed as EMPTY');
+}
+`;
+
 const PEERS = {
   ai: {
     // The ends of the declared range, and every major between. Floors are
@@ -231,6 +366,17 @@ const PEERS = {
     versions: ['4.0.0', '4.104.0', '5.23.2', '6.49.0', '7.4.0'],
     probeTs: OPENAI_PROBE_TS,
     probeMjs: OPENAI_PROBE_MJS,
+  },
+  /*
+   * A 0.x peer, so every minor is a potential break and `^` buys nothing: the
+   * declared range is an explicit window, and these are the points in it that
+   * have actually been run. The floor is pinned exactly for the same reason the
+   * others are -- it is a claim about the oldest release that works.
+   */
+  '@anthropic-ai/sdk': {
+    versions: ['0.60.0', '0.90.0', '0.117.1'],
+    probeTs: ANTHROPIC_PROBE_TS,
+    probeMjs: ANTHROPIC_PROBE_MJS,
   },
 };
 

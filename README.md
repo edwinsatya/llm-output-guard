@@ -76,6 +76,47 @@ const verdict = checkOutput(raw, {
 if (verdict.ok) use(verdict.json); // already parsed, fence stripped
 ```
 
+`requiredKeys` only asks whether a name is present. A model returning
+`{ "score": "very good" }` where you wanted a number satisfies it and still
+breaks everything downstream that does arithmetic. Pass a **schema** to check
+the shape rather than the spelling:
+
+```ts
+import { z } from 'zod';
+
+const Review = z.object({
+  score: z.number().min(0).max(10),
+  notes: z.string(),
+  followUp: z.array(z.string()),
+});
+
+const verdict = checkOutput(raw, { ...presets.strictJson, schema: Review });
+
+if (verdict.ok) use(verdict.json); // parsed, validated, defaults applied
+```
+
+Any [Standard Schema](https://standardschema.dev) validator works — **Zod 4,
+Valibot, ArkType**, or your own. The spec is types-only, so this costs an
+interface and **no dependency**: your validator is one you already have, and
+`llm-output-guard` still installs with nothing behind it.
+
+On success `verdict.json` is the schema's *output*, so defaults, coercions and
+transforms are applied and the value matches the type you declared. On failure
+you get `INVALID_JSON` with the failing path in the message —
+`score: Expected number, received string`. It is the same reason code as a
+missing key or an unparseable payload because it wants the same handling: retry,
+or fall through to another provider.
+
+The two compose, and keys are checked first, so a missing key is still reported
+as a missing key rather than as whatever the schema calls it.
+
+> **The schema must validate synchronously.** `checkOutput` is synchronous by
+> design — that is what makes it safe on a hot path — so a schema carrying an
+> async refinement throws a `TypeError` telling you so, rather than silently
+> passing. Everything Zod, Valibot and ArkType produce otherwise is synchronous.
+> This is the one thing in the package that throws about your configuration; it
+> still never throws about a response.
+
 ### Streaming, where it stops costing you tokens
 
 Checking a finished response tells you that you already paid for it. A model
@@ -307,8 +348,53 @@ deferred to `end()`. `LOW_ENTROPY` is deferred too, for cost — it is ~100x the
 other detectors, and everything it would have caught early is caught by
 `REPETITION`, or by `TAIL_LOOP`'s character mode on non-spaced scripts.
 
-Both adapters share this behaviour because both drive the same
-`createStreamGuard`. Neither reimplements it.
+Every adapter shares this behaviour because they all drive the same
+`createStreamGuard`. None of them reimplements it.
+
+### Anthropic SDK
+
+Same one wrap, same options:
+
+```ts
+import Anthropic from '@anthropic-ai/sdk';
+import { withOutputGuard } from 'llm-output-guard/anthropic';
+import { presets } from 'llm-output-guard';
+
+const client = withOutputGuard(new Anthropic(), {
+  ...presets.chat,
+  onDegenerate: 'abort',
+});
+
+await client.messages.create({ model, max_tokens, messages });               // guarded
+await client.messages.create({ model, max_tokens, messages, stream: true }); // guarded
+```
+
+Two things are specific to this API:
+
+**Extended thinking is not read as the answer.** `thinking` blocks are the
+model's reasoning, they are often longer than the answer, and they repeat
+themselves as a matter of course while working a problem. Folding them into the
+measured text would raise every repetition score on every thinking response and
+flag the ones that thought hardest — so only `text` blocks are measured, and a
+`thinking` block is not mistaken for a tool call either.
+
+**Both of Anthropic's length stops map to `TRUNCATED`.** `max_tokens` passes
+straight through; `model_context_window_exceeded` is the same event under a
+different name and is normalised in the adapter. `refusal` is deliberately *not*
+truncation — a refusal is a complete response that says no, which is a content
+judgement this package does not make.
+
+> **`messages.stream()` is not guarded**, for the same reason `responses.stream()`
+> isn't: it returns a `MessageStream` — an event emitter with `.on()` and
+> `.finalMessage()` — and guarding only its iteration would leave
+> `.finalMessage()` unchecked. Use `create({ stream: true })`, or run
+> `checkOutput` on `await stream.finalMessage()` yourself. `messages.batches` is
+> unguarded too, and less interestingly: a batch is retrieved later as a file of
+> results, so there is no response at `create` time to inspect.
+
+`@anthropic-ai/sdk` is an **optional peer dependency**, declared
+`>=0.60.0 <1.0.0` and verified at 0.60.0, 0.90.0 and 0.117.1 — each installing
+the packed tarball and running the adapter for real, not just typechecking.
 
 ### Tool calls and agents
 
@@ -372,7 +458,7 @@ gives you a number that describes neither.
 | `TAIL_LOOP` | Good start, then a stuck ending | Periodicity in the trailing window, over words or characters | `tailLoopScore`, `tailLoopDetail` |
 | `LOW_ENTROPY` | Character-level collapse, token artifacts | Hand-rolled LZ77 compression ratio | `compressibilityScore`, `compressionRatio` |
 | `TRUNCATED` | Cut off mid-thought | `finish_reason`, unbalanced fences/brackets | `truncationScore` |
-| `INVALID_JSON` | Prose around the payload, missing keys | Parse + key contract | `jsonScore`, `stripFence` |
+| `INVALID_JSON` | Prose around the payload, missing keys, wrong types | Parse + key contract + optional schema | `jsonScore`, `stripFence` |
 | `LANG_MISMATCH` | Answered in the wrong language | Function-word profile (coarse, opt-in) | `languageMismatchScore`, `languageProfile`, `supportedLanguages` |
 
 Every detector is exported on its own if you only want one, and every name in
@@ -629,13 +715,15 @@ onward; under `0.x` they described an intent, and the surface was frozen — exp
 by export — in the 1.0.0 release.
 
 **The public API is:** everything exported from `llm-output-guard`, plus
-`outputGuard` / `OutputGuardOptions` / `DegenerateAction` from `./ai-sdk` and
-`withOutputGuard` / `OutputGuardOptions` / `DegenerateAction` from `./openai`.
-Each subpath is its own contract; the two adapters share an internal base type
-today and are free to diverge, so an option added to one is not a promise about
-the other. Anything not exported from those three entry points is internal, has
-no stability guarantee, and may move in any release. The list is asserted in
-`test/surface.test.ts`, so an export cannot join it by accident.
+`outputGuard` / `OutputGuardOptions` / `DegenerateAction` from `./ai-sdk`, and
+`withOutputGuard` / `OutputGuardOptions` / `DegenerateAction` from each of
+`./openai` and `./anthropic`. Each subpath is its own contract; the adapters
+share internal base types today and are free to diverge, so an option added to
+one is not a promise about the others. Anything not exported from those four
+entry points is internal, has no stability guarantee, and may move in any release
+— `internal/proxy-guard.ts` and `internal/tool-calls.ts` included, however much
+behaviour they carry. The list is asserted in `test/surface.test.ts`, so an
+export cannot join it by accident.
 
 **Threshold and preset values are behaviour, not implementation.** This is the
 interesting case, so it gets a rule of its own:
