@@ -1,0 +1,652 @@
+<title>Degeneracy Bench</title>
+<style>
+  :root {
+    --ground: #f4f7f9;
+    --surface: #ffffff;
+    --surface-2: #eef2f5;
+    --ink: #121820;
+    --muted: #57626e;
+    --line: #dbe2e8;
+    --accent: #10617a;
+    --accent-soft: #d6e7ed;
+    --on-accent: #ffffff;
+    --pass: #2a7355;
+    --fail: #ad4034;
+    --warn: #976c15;
+    --shadow: 0 1px 2px rgba(18, 24, 32, .06), 0 8px 24px -12px rgba(18, 24, 32, .18);
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0e1319;
+      --surface: #151b23;
+      --surface-2: #1b232c;
+      --ink: #e0e7ee;
+      --muted: #8b96a3;
+      --line: #242d38;
+      --accent: #5cb3cf;
+      --accent-soft: #16323d;
+      --on-accent: #0e1319;
+      --pass: #5fbb90;
+      --fail: #e08074;
+      --warn: #d3a94a;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -12px rgba(0, 0, 0, .7);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0e1319;
+    --surface: #151b23;
+    --surface-2: #1b232c;
+    --ink: #e0e7ee;
+    --muted: #8b96a3;
+    --line: #242d38;
+    --accent: #5cb3cf;
+    --accent-soft: #16323d;
+    --on-accent: #0e1319;
+    --pass: #5fbb90;
+    --fail: #e08074;
+    --warn: #d3a94a;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -12px rgba(0, 0, 0, .7);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 40px 24px 72px; }
+
+  /* ---- header ---------------------------------------------------------- */
+  header { display: flex; flex-direction: column; gap: 14px; margin-bottom: 34px; }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--accent); font-weight: 600;
+  }
+  h1 {
+    margin: 0; font-size: clamp(28px, 4.2vw, 40px); line-height: 1.1;
+    letter-spacing: -.022em; font-weight: 640; text-wrap: balance;
+  }
+  .lede { margin: 0; max-width: 62ch; color: var(--muted); font-size: 16.5px; }
+  .lede strong { color: var(--ink); font-weight: 600; }
+  .install {
+    font-family: var(--mono); font-size: 13px; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 7px; padding: 9px 13px;
+    align-self: flex-start; color: var(--ink); box-shadow: var(--shadow);
+  }
+  .install span { color: var(--muted); user-select: none; }
+
+  /* ---- layout ---------------------------------------------------------- */
+  .bench { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; }
+  @media (max-width: 900px) { .bench { grid-template-columns: minmax(0, 1fr); } }
+
+  .panel {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 11px;
+    box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: hidden;
+  }
+  .panel-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    padding: 13px 17px; border-bottom: 1px solid var(--line); background: var(--surface-2);
+  }
+  .panel-title {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .13em;
+    text-transform: uppercase; color: var(--muted); font-weight: 600;
+  }
+  .panel-body { padding: 17px; display: flex; flex-direction: column; gap: 15px; }
+
+  /* ---- specimen -------------------------------------------------------- */
+  .group-label {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: .11em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 8px; font-weight: 600;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    font-family: var(--mono); font-size: 11.5px; padding: 5px 10px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--surface); color: var(--muted);
+    cursor: pointer; transition: border-color .13s, color .13s, background .13s;
+  }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+  .chip[aria-pressed="true"] {
+    background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600;
+  }
+  .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  textarea {
+    width: 100%; min-height: 232px; resize: vertical; padding: 13px;
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.62;
+    background: var(--ground); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 8px;
+  }
+  textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+
+  .note {
+    font-size: 13px; color: var(--muted); border-left: 2px solid var(--accent);
+    padding-left: 11px; min-height: 1.55em;
+  }
+  .note b { color: var(--ink); font-weight: 600; }
+
+  /* ---- verdict --------------------------------------------------------- */
+  .verdict {
+    display: flex; align-items: center; gap: 11px; padding: 13px 15px;
+    border-radius: 9px; border: 1px solid; font-family: var(--mono);
+  }
+  .verdict.ok { background: color-mix(in srgb, var(--pass) 9%, transparent); border-color: color-mix(in srgb, var(--pass) 38%, transparent); }
+  .verdict.bad { background: color-mix(in srgb, var(--fail) 9%, transparent); border-color: color-mix(in srgb, var(--fail) 38%, transparent); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .verdict.ok .dot { background: var(--pass); }
+  .verdict.bad .dot { background: var(--fail); }
+  .verdict-text { font-size: 13.5px; font-weight: 600; }
+  .verdict.ok .verdict-text { color: var(--pass); }
+  .verdict.bad .verdict-text { color: var(--fail); }
+  .verdict-codes { margin-left: auto; font-size: 11.5px; color: var(--muted); text-align: right; }
+
+  /* ---- meters ---------------------------------------------------------- */
+  .meters { display: flex; flex-direction: column; gap: 2px; }
+  .meter {
+    display: grid; grid-template-columns: 116px minmax(0, 1fr) 52px;
+    align-items: center; gap: 11px; padding: 7px 0;
+  }
+  .meter.off { opacity: .38; }
+  .code {
+    font-family: var(--mono); font-size: 11px; letter-spacing: .04em;
+    font-weight: 600; color: var(--ink);
+  }
+  .code .mode { color: var(--muted); font-weight: 400; }
+  .track {
+    position: relative; height: 7px; border-radius: 4px;
+    background: var(--surface-2); border: 1px solid var(--line); overflow: visible;
+  }
+  .fill {
+    position: absolute; inset: 0 auto 0 0; border-radius: 3px;
+    background: var(--pass); transition: width .28s cubic-bezier(.4, 0, .2, 1), background .18s;
+  }
+  .fill.over { background: var(--fail); }
+  .tick {
+    position: absolute; top: -4px; bottom: -4px; width: 2px; border-radius: 1px;
+    background: var(--ink); opacity: .5; transition: left .28s cubic-bezier(.4, 0, .2, 1);
+  }
+  .val {
+    font-family: var(--mono); font-size: 12px; text-align: right;
+    font-variant-numeric: tabular-nums; color: var(--muted);
+  }
+  .val.over { color: var(--fail); font-weight: 600; }
+  @media (prefers-reduced-motion: reduce) { .fill, .tick { transition: none; } }
+
+  .legend {
+    display: flex; gap: 16px; flex-wrap: wrap; font-family: var(--mono);
+    font-size: 10.5px; color: var(--muted); padding-top: 3px;
+  }
+  .legend i { display: inline-block; width: 16px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+  .legend .k-tick { width: 2px; height: 11px; background: var(--ink); opacity: .5; }
+
+  /* ---- controls -------------------------------------------------------- */
+  .presets { display: flex; gap: 5px; flex-wrap: wrap; }
+  .seg {
+    font-family: var(--mono); font-size: 11.5px; padding: 6px 12px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 7px;
+    transition: border-color .13s, color .13s, background .13s;
+  }
+  .seg:hover { border-color: var(--accent); color: var(--accent); }
+  /* One declaration, taking its contrast from a token that flips with the
+     theme. Chasing this with extra [data-theme] rules is how a colour ends up
+     defined only inside one branch and unset in the un-stamped default. */
+  .seg[aria-pressed="true"] {
+    background: var(--accent); border-color: var(--accent);
+    color: var(--on-accent); font-weight: 600;
+  }
+  .seg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  pre.snippet {
+    margin: 0; padding: 13px; background: var(--ground); border: 1px solid var(--line);
+    border-radius: 8px; font-family: var(--mono); font-size: 12px; line-height: 1.6;
+    overflow-x: auto; color: var(--ink);
+  }
+  .snippet .k { color: var(--accent); }
+  .snippet .s { color: var(--pass); }
+  .snippet .c { color: var(--muted); }
+
+  /* ---- explainer ------------------------------------------------------- */
+  .explain { margin-top: 40px; display: grid; grid-template-columns: repeat(auto-fit, minmax(248px, 1fr)); gap: 18px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 11px; padding: 17px; box-shadow: var(--shadow); }
+  .card h3 { margin: 0 0 7px; font-size: 14px; font-weight: 640; letter-spacing: -.006em; }
+  .card p { margin: 0; font-size: 13.5px; color: var(--muted); }
+  .card code { font-family: var(--mono); font-size: 12px; color: var(--ink); }
+
+  footer {
+    margin-top: 38px; padding-top: 18px; border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: baseline;
+    font-size: 13px; color: var(--muted);
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+  footer a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  .ver { font-family: var(--mono); font-size: 11.5px; margin-left: auto; }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">llm-output-guard &middot; live</div>
+    <h1>Degeneracy Bench</h1>
+    <p class="lede">
+      Every detector in the package, running <strong>in your browser</strong> on whatever you
+      paste. No API key, no request, no server &mdash; the library is zero-dependency and
+      synchronous, so this page runs the real thing. The numbers below are what
+      <code>checkOutput</code> returns.
+    </p>
+    <div class="install"><span>$</span> npm i llm-output-guard</div>
+  </header>
+
+  <div class="bench">
+    <section class="panel">
+      <div class="panel-head">
+        <span class="panel-title">Specimen</span>
+        <span class="panel-title" id="charcount">0 chars</span>
+      </div>
+      <div class="panel-body">
+        <div>
+          <div class="group-label">Degenerate &mdash; should be caught</div>
+          <div class="chips" id="chips-bad"></div>
+        </div>
+        <div>
+          <div class="group-label">Healthy traps &mdash; should <em>not</em> be caught</div>
+          <div class="chips" id="chips-good"></div>
+        </div>
+        <textarea id="input" spellcheck="false" aria-label="Model output to check"></textarea>
+        <p class="note" id="note"></p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <span class="panel-title">Readout</span>
+        <div class="presets" id="presets"></div>
+      </div>
+      <div class="panel-body">
+        <div class="verdict ok" id="verdict">
+          <span class="dot"></span>
+          <span class="verdict-text" id="verdict-text">ok</span>
+          <span class="verdict-codes" id="verdict-codes"></span>
+        </div>
+        <div class="meters" id="meters"></div>
+        <div class="legend">
+          <span><i class="k-tick"></i>threshold</span>
+          <span><i style="background: var(--pass)"></i>under</span>
+          <span><i style="background: var(--fail)"></i>over &rarr; fails</span>
+        </div>
+        <pre class="snippet" id="snippet"></pre>
+      </div>
+    </section>
+  </div>
+
+  <div class="explain">
+    <div class="card">
+      <h3>Scores, not booleans</h3>
+      <p>Each detector returns 0&ndash;1 and you pick the line. The tick on each track is the
+        threshold for the selected preset &mdash; switch presets and watch the ticks move while
+        the scores stay put.</p>
+    </div>
+    <div class="card">
+      <h3>Every detector runs</h3>
+      <p>Nothing short-circuits on the first failure, so a verdict shows the whole picture
+        rather than whichever check happened to be ordered first. Passing scores are reported
+        too &mdash; those are what you feed to your metrics.</p>
+    </div>
+    <div class="card">
+      <h3>False positives cost more</h3>
+      <p>A miss is annoying; discarding a healthy response and retrying against a slower
+        provider is worse. That is why the corpus carries traps &mdash; markdown tables, repeated
+        list prefixes, rhetorical refrains &mdash; that a naive detector flags.</p>
+    </div>
+    <div class="card">
+      <h3>Word and character modes</h3>
+      <p>Chinese, Japanese and Thai put no spaces between words, so a whole clause is one
+        token and word n&#8209;grams measure nothing. <code>TAIL_LOOP</code> switches to
+        characters and reads its own threshold &mdash; the label shows which ran.</p>
+    </div>
+  </div>
+
+  <footer>
+    <a href="https://github.com/edwinsatya/llm-output-guard">GitHub</a>
+    <a href="https://www.npmjs.com/package/llm-output-guard">npm</a>
+    <span>Specimens are the project&rsquo;s own test fixtures.</span>
+    <span class="ver">v1.2.0</span>
+  </footer>
+</div>
+
+<script type="module">
+export { DegenerateOutputError, assertOutput, checkOutput, compressibilityScore, compressionRatio, createStreamGuard, emptinessScore, guardStream, jsonScore, languageMismatchScore, languageProfile, repetitionScore, shortnessScore, stripFence, supportedLanguages, tailLoopDetail, tailLoopScore, truncationScore } from './chunk-XHP4LSIH.js';
+
+// src/calibrate.ts
+function percentile(sorted, p) {
+  if (sorted.length === 0) return NaN;
+  if (sorted.length === 1) return sorted[0];
+  const rank = (sorted.length - 1) * p;
+  const low = Math.floor(rank);
+  const high = Math.ceil(rank);
+  if (low === high) return sorted[low];
+  return sorted[low] + (sorted[high] - sorted[low]) * (rank - low);
+}
+function findGap(sorted, minWidth = 0.15) {
+  if (sorted.length < 20) return null;
+  const start = Math.floor(sorted.length * 0.5);
+  let best = null;
+  for (let i = start; i < sorted.length - 1; i += 1) {
+    const width = sorted[i + 1] - sorted[i];
+    if (width < minWidth || best && width <= best.above - best.below) continue;
+    const count = sorted.length - (i + 1);
+    best = {
+      below: sorted[i],
+      above: sorted[i + 1],
+      count,
+      share: count / sorted.length
+    };
+  }
+  return best;
+}
+function summarise(code, scores, options = {}) {
+  const { falsePositiveRate = 1e-3, mode } = options;
+  const sorted = [...scores].sort((a, b) => a - b);
+  const n = sorted.length;
+  const distribution = {
+    n,
+    nonZero: sorted.filter((s) => s > 0).length,
+    min: sorted[0] ?? NaN,
+    max: sorted[n - 1] ?? NaN,
+    p50: percentile(sorted, 0.5),
+    p90: percentile(sorted, 0.9),
+    p99: percentile(sorted, 0.99),
+    p999: percentile(sorted, 0.999)
+  };
+  const caveats = [];
+  const gap = findGap(sorted);
+  const tailSamples = n * falsePositiveRate;
+  if (tailSamples < 10) {
+    caveats.push(
+      `sample is too small for a ${(falsePositiveRate * 100).toFixed(2)}% rate: it rests on the top ~${tailSamples.toFixed(0)} scores, and ~${Math.ceil(10 / falsePositiveRate).toLocaleString()} verdicts are needed before that tail means anything`
+    );
+  }
+  if (distribution.max === 0) {
+    caveats.push("every score is 0 -- this detector never moved on your traffic, so there is nothing to calibrate");
+  } else if (distribution.p50 === distribution.max) {
+    caveats.push("the distribution is a single value; a threshold from it describes nothing");
+  }
+  let suggested;
+  if (gap) {
+    suggested = (gap.below + gap.above) / 2;
+    if (gap.count < 5) {
+      caveats.push(
+        `the separation rests on ${gap.count} sample${gap.count === 1 ? "" : "s"}; treat it as a lead to confirm, not a calibrated threshold`
+      );
+    }
+  } else {
+    suggested = percentile(sorted, 1 - falsePositiveRate);
+    caveats.push(
+      "no clean separation in the tail, so this is a false-positive budget rather than a detection threshold"
+    );
+  }
+  return {
+    code,
+    ...mode && { mode },
+    distribution,
+    suggested: Number(suggested.toFixed(3)),
+    gap,
+    caveats
+  };
+}
+function calibrate(samples, options = {}) {
+  const groups = /* @__PURE__ */ new Map();
+  for (const sample of samples) {
+    const modes = sample.modes;
+    for (const [key, score] of Object.entries(sample)) {
+      if (typeof score !== "number" || !Number.isFinite(score)) continue;
+      const code = key;
+      const mode = modes?.[code];
+      const groupKey = mode ? `${code}:${mode}` : code;
+      const group = groups.get(groupKey);
+      if (group) group.scores.push(score);
+      else groups.set(groupKey, { code, ...mode && { mode }, scores: [score] });
+    }
+  }
+  const summaries = [...groups.values()].map(({ code, mode, scores }) => summarise(code, scores, { ...options, ...mode && { mode } })).sort((a, b) => b.distribution.n - a.distribution.n);
+  return { n: samples.length, summaries };
+}
+
+// src/presets.ts
+var presets = {
+  /** Conversational replies. Tolerant of quoted or listed repetition. */
+  chat: {
+    minLength: 12,
+    maxRepetition: 0.4,
+    maxTailLoop: 0.5,
+    maxCharTailLoop: 0.7,
+    maxCompressibility: 0.75
+  },
+  /**
+   * Structured output. Parseability is non-negotiable; prose checks relax.
+   *
+   * `maxCompressibility` is null here because a JSON payload is legitimately
+   * repetitive at the character level. `maxCharTailLoop` is *not* null for the
+   * same reason it is safe to keep: the tail detector needs exact periodicity,
+   * which repeated key scaffolding never produces -- a 40-element array of
+   * Chinese strings scores 0.000. Nulling it would restore the CJK blind spot
+   * on the one preset most likely to be pointed at non-English payloads.
+   */
+  strictJson: {
+    minLength: 2,
+    expectJson: true,
+    maxRepetition: 0.6,
+    maxTailLoop: 0.6,
+    maxCharTailLoop: 0.75,
+    maxCompressibility: null,
+    maxTruncation: 0.75
+  },
+  /** Long-form generation, where truncation matters most. */
+  longForm: {
+    minLength: 200,
+    maxRepetition: 0.35,
+    maxTailLoop: 0.4,
+    maxCharTailLoop: 0.6,
+    maxCompressibility: 0.7,
+    maxTruncation: 0.75
+  },
+  /** Catches only unambiguous garbage. Use when false positives cost more than misses. */
+  lenient: {
+    minLength: 1,
+    maxRepetition: 0.7,
+    maxTailLoop: 0.7,
+    maxCharTailLoop: 0.85,
+    maxCompressibility: 0.9
+  }
+};
+
+
+//# sourceMappingURL=index.js.map
+//# sourceMappingURL=index.js.map
+
+const FIXTURES = {"degenerate":[{"id":"repetition-word-stutter","note":"Single-token stutter, no sentence structure at all.","text":"interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview","preset":"chat"},{"id":"repetition-clause-loop","note":"Classic degenerate loop. This is the shape the gemma retry storm produced.","text":"The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React.","preset":"chat"},{"id":"tail-loop-after-good-start","note":"First half is fine, then it falls into a loop. Whole-output repetition scores low here.","text":"Based on the repositories, this candidate works primarily in TypeScript with a focus on frontend architecture. They have shipped several production applications and show comfort with server-side rendering, state management, and API design across a range of project sizes and problem domains they encountered.\n\nPlease describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing.","preset":"chat"},{"id":"cjk-tail-loop-zh-nopunct","note":"Chinese loop with no punctuation inside it. The whole 640 characters are a single word() token, so REPETITION and word-mode TAIL_LOOP both score 0.000. Char-mode TAIL_LOOP scores 1.000. This is the fixture the character dispatch exists for.","text":"我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题","preset":"chat"},{"id":"low-entropy-charspam","note":"Character-level collapse with no word boundaries for n-grams to catch.","text":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","preset":"chat"},{"id":"truncated-mid-sentence","note":"Hit the token ceiling mid-clause.","text":"The candidate demonstrates solid familiarity with distributed caching, and in particular their use of Redis for session state suggests they have thought carefully about the tradeoffs between","preset":"strictJson"},{"id":"empty-json-braces","note":"Empty JSON envelope where content was expected.","text":"{}","preset":"strictJson"},{"id":"invalid-json-prose-wrapper","note":"Model chatted around the payload instead of emitting bare JSON.","text":"Sure! Here is the JSON you requested:\n\n{ \"score\": 8, \"notes\": \"solid\" }\n\nLet me know if you need anything else.","preset":"strictJson"}],"healthy":[{"id":"markdown-table","note":"TRAP: pipes and dashes look like low-entropy noise.","text":"| Provider | Median latency | Failure rate |\n| --- | --- | --- |\n| Gemini | 820ms | 0.4% |\n| Groq | 310ms | 1.2% |\n| Local | 2100ms | 0.0% |\n\nGroq is fastest but least reliable, which is exactly why it belongs second in the chain rather than first.","preset":"chat"},{"id":"list-repeated-prefix","note":"TRAP: every line starts identically. A naive n-gram check flags this.","text":"Pertanyaan yang bisa diajukan:\n\n1. Bagaimana kamu menentukan kapan sebuah komponen perlu dipecah?\n2. Bagaimana kamu menangani race condition di sisi klien?\n3. Bagaimana kamu memutuskan antara server component dan client component?\n4. Bagaimana kamu mengukur dampak perubahan terhadap performa?\n5. Bagaimana kamu menangani error dari pihak ketiga yang tidak stabil?","preset":"chat"},{"id":"prose-en-with-refrain","note":"TRAP: deliberate rhetorical repetition, which is legitimate writing.","text":"It is not a framework problem. It is not a language problem. It is not even a scaling problem. What you are looking at is a design problem, and no amount of infrastructure will paper over it. The queue you added last quarter moved the symptom rather than removing it, and the retry logic you added on top moved it again.","preset":"chat"},{"id":"code-block-typescript","note":"TRAP: code repeats syntax heavily and ends on a brace.","text":"Here is the wrapper:\n\n```ts\nexport async function withFallback<T>(fns: Array<() => Promise<T>>): Promise<T> {\n  let last: unknown;\n  for (const fn of fns) {\n    try {\n      return await fn();\n    } catch (err) {\n      last = err;\n    }\n  }\n  throw last;\n}\n```\n\nIt tries each function in order and rethrows the final error if all of them fail.","preset":"chat"},{"id":"prose-zh-poem-refrain","note":"Trap. A six-times refrain closing a Chinese poem -- legitimate, and the healthy end of the same curve cjk-refrain-x20 sits at the degenerate end of. Char TAIL_LOOP scores 0.291 here against a 0.7 threshold. The curve crosses at roughly ten consecutive repeats.","text":"用户要求写一段关于离别的短诗，下面是我的尝试。整体的节奏偏慢，重复的句子用来收束情绪，这是这一类作品里常见的处理方式。如果你希望更克制一些，可以把最后的重复减少到两次。\n\n站台的灯一盏一盏亮起来\n行李比来时更重\n你说的那句再见\n被风吹散在铁轨上\n\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n","preset":"chat"},{"id":"prose-zh-repeated-prefix-steps","note":"Trap, and the CJK analogue of list-repeated-prefix. Every step opens with the identical verb phrase.","text":"发布流程如下，请按顺序执行，任何一步没有通过都不要继续往下走。\n\n请先确认配置文件中的数据库地址已经指向生产实例，而不是预发环境。\n请先确认镜像标签与发布单上记录的版本号完全一致，包括构建号后缀。\n请先确认灰度比例已经设置为百分之五，并且监控面板处于打开状态。\n请先确认回滚脚本可以在两分钟之内执行完毕，必要时提前演练一次。\n请先确认值班同事已经收到本次发布的通知，并且确认过时间窗口。\n请先确认变更记录已经写入内部文档，包含影响范围和回滚方式。","preset":"chat"},{"id":"prose-en-technical-explanation","note":"Normal English answer.","text":"Circuit breakers work by tracking consecutive failures against a threshold. Once that threshold is crossed the breaker opens and subsequent calls fail immediately, without touching the downstream service. After a cooldown window the breaker moves to a half-open state and allows a single trial request through. If that request succeeds the breaker closes again; if it fails, the cooldown restarts.","preset":"chat"},{"id":"json-fenced-valid","note":"Valid JSON inside a fence -- common and acceptable.","text":"```json\n{\n  \"score\": 6,\n  \"notes\": \"Mixed signal.\",\n  \"followUp\": []\n}\n```","preset":"strictJson"}]};
+
+/* Thresholds per code. A verdict carries one only for detectors that failed, so
+   the passing ones are derived from the same options checkOutput was given --
+   otherwise the tick would vanish on exactly the tracks that are behaving. */
+const EMPTY_T = 0.5;
+function thresholdFor(code, opts, mode) {
+  switch (code) {
+    case 'EMPTY': return EMPTY_T;
+    case 'TOO_SHORT': return 0;
+    case 'REPETITION': return opts.maxRepetition ?? null;
+    case 'TAIL_LOOP': return (mode === 'char' ? opts.maxCharTailLoop : opts.maxTailLoop) ?? null;
+    case 'LOW_ENTROPY': return opts.maxCompressibility ?? null;
+    case 'TRUNCATED': return opts.maxTruncation ?? 0.75;
+    case 'INVALID_JSON': return 0;
+    case 'LANG_MISMATCH': return opts.maxLangMismatch ?? 0.6;
+    default: return null;
+  }
+}
+
+const ORDER = ['EMPTY', 'TOO_SHORT', 'REPETITION', 'TAIL_LOOP', 'LOW_ENTROPY', 'TRUNCATED', 'INVALID_JSON', 'LANG_MISMATCH'];
+const PRESETS = ['chat', 'strictJson', 'longForm', 'lenient'];
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+};
+
+let activePreset = 'chat';
+let activeChip = null;
+
+function buildChips(containerId, list, kind) {
+  const box = $(containerId);
+  list.forEach((f) => {
+    const b = el('button', 'chip', f.id);
+    b.type = 'button';
+    b.setAttribute('aria-pressed', 'false');
+    b.addEventListener('click', () => {
+      $('input').value = f.text;
+      activeChip = { ...f, kind };
+      document.querySelectorAll('.chip').forEach((c) => c.setAttribute('aria-pressed', 'false'));
+      b.setAttribute('aria-pressed', 'true');
+      /* Each specimen carries the preset it was written for. A preset is a
+         contract for a task, not a strictness dial: presets.chat leaves
+         truncation and JSON off entirely, so a truncated specimen judged by it
+         is not being missed -- it is not being asked about. Switching here keeps
+         the labels honest; switching back by hand is where that lesson lands. */
+      setPreset(f.preset || 'chat');
+      run();
+    });
+    box.appendChild(b);
+  });
+}
+
+function setPreset(name) {
+  activePreset = name;
+  document.querySelectorAll('.seg').forEach((s) => {
+    s.setAttribute('aria-pressed', String(s.textContent === name));
+  });
+}
+
+function buildPresets() {
+  const box = $('presets');
+  PRESETS.forEach((name) => {
+    const b = el('button', 'seg', name);
+    b.type = 'button';
+    b.setAttribute('aria-pressed', String(name === activePreset));
+    b.addEventListener('click', () => {
+      setPreset(name);
+      run();
+    });
+    box.appendChild(b);
+  });
+}
+
+function run() {
+  const text = $('input').value;
+  const opts = presets[activePreset];
+  const verdict = checkOutput(text, opts);
+
+  $('charcount').textContent = text.length.toLocaleString() + ' chars';
+
+  /* ---- verdict banner ---- */
+  const v = $('verdict');
+  v.className = 'verdict ' + (verdict.ok ? 'ok' : 'bad');
+  $('verdict-text').textContent = verdict.ok ? 'ok — nothing crossed its threshold' : 'degenerate';
+  $('verdict-codes').textContent = verdict.ok
+    ? 'presets.' + activePreset
+    : verdict.reasons.map((r) => r.code).join('  ');
+
+  /* ---- meters ---- */
+  const box = $('meters');
+  box.textContent = '';
+  const failing = new Set(verdict.reasons.map((r) => r.code));
+
+  ORDER.forEach((code) => {
+    const has = Object.prototype.hasOwnProperty.call(verdict.scores, code);
+    const score = has ? verdict.scores[code] : 0;
+    const mode = verdict.modes ? verdict.modes[code] : undefined;
+    const t = thresholdFor(code, opts, mode);
+    const over = failing.has(code);
+
+    const row = el('div', 'meter' + (has ? '' : ' off'));
+
+    const label = el('div', 'code');
+    label.textContent = code;
+    if (mode) {
+      const m = el('span', 'mode', ' [' + mode + ']');
+      label.appendChild(m);
+    }
+
+    const track = el('div', 'track');
+    const fill = el('div', 'fill' + (over ? ' over' : ''));
+    fill.style.width = Math.max(0, Math.min(1, score)) * 100 + '%';
+    track.appendChild(fill);
+    if (has && t != null && t > 0 && t < 1) {
+      const tick = el('div', 'tick');
+      tick.style.left = t * 100 + '%';
+      tick.title = 'threshold ' + t;
+      track.appendChild(tick);
+    }
+
+    const val = el('div', 'val' + (over ? ' over' : ''));
+    val.textContent = has ? score.toFixed(3) : '—';
+
+    row.append(label, track, val);
+    box.appendChild(row);
+  });
+
+  /* ---- note ---- */
+  const note = $('note');
+  note.textContent = '';
+  if (activeChip && activeChip.note) {
+    const wantFail = activeChip.kind === 'bad';
+    const asLabelled = verdict.ok !== wantFail;
+    const strong = el('b', null, wantFail ? 'Degenerate. ' : 'Healthy. ');
+    note.append(strong, document.createTextNode(activeChip.note.replace(/^TRAP:\s*/i, '')));
+
+    /* A specimen judged by the wrong preset is not a miss -- it is a question
+       that preset does not ask. Saying so is the difference between the page
+       teaching the model and the page looking broken. */
+    if (!asLabelled) {
+      const why = el('span', null,
+        wantFail
+          ? '  Not caught here: presets.' + activePreset + ' does not enable the detector this one trips. Try presets.' + activeChip.preset + '.'
+          : '  Flagged here: presets.' + activePreset + ' asks for something this specimen is not. Try presets.' + activeChip.preset + '.');
+      why.style.color = 'var(--warn)';
+      note.appendChild(why);
+    }
+  } else {
+    note.textContent = 'Pick a specimen above, or paste your own model output.';
+  }
+
+  /* ---- snippet ---- */
+  $('snippet').innerHTML =
+    '<span class="k">import</span> { checkOutput, presets } <span class="k">from</span> <span class="s">&#39;llm-output-guard&#39;</span>;\n' +
+    '\n' +
+    '<span class="k">const</span> verdict = checkOutput(text, presets.' + activePreset + ');\n' +
+    (verdict.ok
+      ? '<span class="c">// verdict.ok === true — use the response</span>'
+      : '<span class="c">// verdict.ok === false — ' + verdict.reasons.map((r) => r.code).join(', ') + '</span>');
+}
+
+buildChips('chips-bad', FIXTURES.degenerate, 'bad');
+buildChips('chips-good', FIXTURES.healthy, 'good');
+buildPresets();
+$('input').addEventListener('input', () => { activeChip = null;
+  document.querySelectorAll('.chip').forEach((c) => c.setAttribute('aria-pressed', 'false'));
+  run();
+});
+
+/* Open on a loop, because the package's whole reason for existing is visible in
+   one glance there rather than on an empty box. */
+const first = FIXTURES.degenerate[0];
+$('input').value = first.text;
+activeChip = { ...first, kind: 'bad' };
+document.querySelector('#chips-bad .chip').setAttribute('aria-pressed', 'true');
+run();
+</script>

@@ -8,6 +8,10 @@ Zero runtime dependencies. Deterministic. Composes with whatever retry or fallba
 npm i llm-output-guard
 ```
 
+**[Try it in your browser →](https://edwinsatya.github.io/llm-output-guard/)** — every detector, running on
+this repo's own fixtures or on your own pasted output. No API key and no request:
+the library is zero-dependency and synchronous, so the page runs the real thing.
+
 ---
 
 ## Why this exists
