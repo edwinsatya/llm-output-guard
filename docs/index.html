@@ -314,7 +314,7 @@
     <a href="https://github.com/edwinsatya/llm-output-guard">GitHub</a>
     <a href="https://www.npmjs.com/package/llm-output-guard">npm</a>
     <span>Specimens are the project&rsquo;s own test fixtures.</span>
-    <span class="ver">v1.3.0</span>
+    <span class="ver">v1.3.1</span>
   </footer>
 </div>
 
@@ -454,11 +454,22 @@ function shortnessScore(text, minChars) {
 // src/detectors/truncation.ts
 var LENGTH_STOPS = /* @__PURE__ */ new Set(["length", "max_tokens", "maxtokens", "max_output_tokens", "token_limit"]);
 var TERMINAL = /[.!?"'`\u2019\u201d)\]}:;\u3002\uff01\uff1f]\s*$/;
+function isCompleteJson(trimmed) {
+  const first = trimmed[0];
+  if (first !== "{" && first !== "[") return false;
+  try {
+    JSON.parse(trimmed);
+    return true;
+  } catch {
+    return false;
+  }
+}
 function truncationScore(text, options = {}) {
   const { finishReason } = options;
   if (finishReason && LENGTH_STOPS.has(finishReason.toLowerCase())) return 1;
   const trimmed = text.trim();
   if (trimmed.length === 0) return 0;
+  if (isCompleteJson(trimmed)) return 0;
   let score = 0;
   const fences = (trimmed.match(/```/g) ?? []).length;
   if (fences % 2 === 1) score = Math.max(score, 0.9);
@@ -496,7 +507,7 @@ function jsonScore(text, options = {}) {
       return { score: 1, value, reason: "missing-keys", missingKeys: [...requiredKeys] };
     }
     const record = value;
-    const missing = requiredKeys.filter((k) => !(k in record));
+    const missing = requiredKeys.filter((k) => !Object.hasOwn(record, k));
     if (missing.length > 0) {
       return { score: 1, value, reason: "missing-keys", missingKeys: missing };
     }
@@ -536,7 +547,7 @@ function languageProfile(text) {
 }
 function languageMismatchScore(text, expected, options = {}) {
   const { minWords = 25 } = options;
-  if (!(expected in PROFILES)) return 0;
+  if (!Object.hasOwn(PROFILES, expected)) return 0;
   const w = words(text);
   if (w.length < minWords) return 0;
   const profile = languageProfile(text);

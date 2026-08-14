@@ -1,5 +1,95 @@
 # llm-output-guard
 
+## 1.3.1
+
+### Patch Changes
+
+- 4a408af: Restructure the README as a landing page, and add badges.
+
+  It was 37 KB and roughly 5,000 words — thorough, and the wrong shape for the
+  thirty seconds someone spends deciding whether to install a reliability library.
+  `## Usage` alone ran 421 lines before the detector table appeared.
+
+  The README now leads with the problem, the install, a nine-line example, and the
+  detector table, and it is 13 KB. Badges for version, min+gzip size, the
+  zero-dependency claim, CI and licence sit above the fold, because "3 KB and no
+  dependencies" is the pitch and it was previously buried in Design notes.
+
+  **Nothing was deleted, only moved.** The long-form material is now five files
+  under `docs/`, each linked from the section that summarises it:
+
+  - `docs/detectors.md` — the full reference, every exported scorer, and the
+    repeated-records case
+  - `docs/adapters.md` — OpenAI, Anthropic and the Vercel AI SDK in full, plus
+    tool-call handling
+  - `docs/streaming.md` — mid-stream detection and the measured latencies
+  - `docs/calibration.md` — the CLI, the programmatic form, and how thresholds are
+    set
+  - `docs/script-coverage.md` — what works on Chinese, Japanese and Thai, and the
+    measurements behind what does not
+
+  The **Stability** section stays in the README, including the 0.4.2 incident. It
+  is a trust asset, not an appendix — it is the part that tells a reader what a
+  version number means here, and it should not require a second click.
+
+  `docs/` remains outside the `files` allowlist, so the published tarball is
+  unaffected apart from the smaller README. A `.nojekyll` file keeps GitHub Pages
+  serving the playground as written now that Markdown sits beside it.
+
+- 4a408af: `requiredKeys` no longer accepts a name inherited from `Object.prototype`.
+
+  The check was `k in record`, which walks the prototype chain — so seven names
+  were reported as present on a payload that never contained them:
+
+  ```ts
+  jsonScore('{"score":8}', { requiredKeys: ["constructor"] }); // score 0, "present"
+  ```
+
+  `toString`, `valueOf`, `constructor`, `hasOwnProperty`, `isPrototypeOf`,
+  `propertyIsEnumerable` and `toLocaleString` all passed. `constructor` is the one
+  plausible in a real contract — a payload describing a builder or a class — and it
+  silently disabled that key's check.
+
+  Now `Object.hasOwn`. The contract is "keys the payload must contain", and an
+  inherited name is not one the model wrote. A payload that genuinely declares
+  `"constructor"` still satisfies it.
+
+  No other behaviour changes: verified byte-identical to the published 1.2.1 across
+  all 228 fixture × preset combinations.
+
+- 4a408af: Two detectors were reading characters they should not have been.
+
+  **`TRUNCATED` counted brackets and fences inside string literals.** A JSON
+  payload carrying a code snippet — an extremely ordinary thing for a model to
+  return — put those characters inside a value, and complete, valid JSON scored as
+  cut off:
+
+  ````ts
+  truncationScore('{"note":"the opening brace { is literal","done":true}'); // 0.8
+  truncationScore('{"snippet":"```js","done":true}'); // 0.9
+  ````
+
+  A document that parses is complete by definition, which is stronger evidence
+  than the heuristics were reaching for, so a parseable payload now scores 0. The
+  provider's own stop reason still wins: a response can be both parseable and cut
+  short at the token ceiling. Genuinely truncated text is unaffected — an unclosed
+  fence still scores 0.9, an unclosed object 0.8, a severed sentence 0.55.
+
+  Gated on the first character, so prose costs one comparison rather than a parse
+  attempt.
+
+  **`LANG_MISMATCH` returned `NaN` for any language name on `Object.prototype`.**
+  The guard was `expected in PROFILES`, which walks the prototype chain, so
+  `expectLang: 'constructor'` passed it, then read a function as the target share
+  and produced `NaN` — a score neither above nor below any threshold, silently
+  disabling the detector and poisoning any histogram built from it. Now
+  `Object.hasOwn`, and an unmodelled language abstains at 0 as documented.
+
+  Same root cause as the `requiredKeys` fix in this release. Verified byte-identical
+  to the published 1.2.1 across all 228 fixture × preset combinations: the corpus
+  contains no payload with a brace inside a string, which is exactly why neither
+  bug was caught.
+
 ## 1.3.0
 
 ### Minor Changes
