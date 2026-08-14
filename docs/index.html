@@ -314,7 +314,7 @@
     <a href="https://github.com/edwinsatya/llm-output-guard">GitHub</a>
     <a href="https://www.npmjs.com/package/llm-output-guard">npm</a>
     <span>Specimens are the project&rsquo;s own test fixtures.</span>
-    <span class="ver">v1.2.1</span>
+    <span class="ver">v1.3.0</span>
   </footer>
 </div>
 
@@ -548,6 +548,27 @@ function languageMismatchScore(text, expected, options = {}) {
 }
 var supportedLanguages = Object.keys(PROFILES);
 
+// src/internal/json-scope.ts
+function stringValues(value, out = []) {
+  if (typeof value === "string") out.push(value);
+  else if (Array.isArray(value)) for (const item of value) stringValues(item, out);
+  else if (value !== null && typeof value === "object") {
+    for (const item of Object.values(value)) stringValues(item, out);
+  }
+  return out;
+}
+function redundancySpans(text, scope) {
+  if (scope !== "jsonValues") return [text];
+  let parsed;
+  try {
+    parsed = JSON.parse(stripFence(text));
+  } catch {
+    return [text];
+  }
+  const values = stringValues(parsed);
+  return values.length > 0 ? values : [""];
+}
+
 // src/check.ts
 var DEFAULTS = {
   minLength: 1,
@@ -560,7 +581,8 @@ var DEFAULTS = {
   expectJson: false,
   allowJsonFence: true,
   maxLangMismatch: 0.6,
-  ngram: 3
+  ngram: 3,
+  redundancyScope: "document"
 };
 function checkOutput(text, options = {}) {
   const opts = { ...DEFAULTS, ...options };
@@ -596,8 +618,9 @@ function checkOutput(text, options = {}) {
       `Response is ${text.trim().length} chars, below the ${opts.minLength} minimum.`
     );
   }
+  const spans = redundancySpans(text, opts.redundancyScope);
   if (opts.maxRepetition != null) {
-    const s = repetitionScore(text, { n: opts.ngram });
+    const s = Math.max(...spans.map((span) => repetitionScore(span, { n: opts.ngram })));
     add(
       "REPETITION",
       s,
@@ -606,7 +629,12 @@ function checkOutput(text, options = {}) {
     );
   }
   {
-    const { score, mode } = tailLoopDetail(text, { nonSpacedCutoff: opts.nonSpacedCutoff });
+    let worst = { score: -1, mode: "word" };
+    for (const span of spans) {
+      const detail = tailLoopDetail(span, { nonSpacedCutoff: opts.nonSpacedCutoff });
+      if (detail.score > worst.score) worst = detail;
+    }
+    const { score, mode } = worst;
     const threshold = mode === "char" ? opts.maxCharTailLoop : opts.maxTailLoop;
     if (threshold != null) {
       add(
