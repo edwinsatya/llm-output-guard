@@ -202,3 +202,38 @@ describe('an async schema is a configuration error, not a verdict', () => {
     ).toThrow(TypeError);
   });
 });
+
+/**
+ * `requiredKeys` asks what the payload contains, not what its prototype does.
+ *
+ * `k in record` walks the prototype chain, so every name on `Object.prototype`
+ * was accepted as present on a payload that never mentioned it. `constructor`
+ * is the one plausible in a real schema -- a payload describing a builder or a
+ * class -- and it passed on `{"score":8}`.
+ */
+describe('requiredKeys ignores inherited names', () => {
+  const INHERITED = [
+    'toString', 'valueOf', 'constructor', 'hasOwnProperty',
+    'isPrototypeOf', 'propertyIsEnumerable', 'toLocaleString',
+  ];
+
+  it.each(INHERITED)('reports %s as missing rather than inherited', (key) => {
+    const result = jsonScore('{"score":8}', { requiredKeys: [key] });
+    expect(result.score).toBe(1);
+    expect(result.reason).toBe('missing-keys');
+    expect(result.missingKeys).toEqual([key]);
+  });
+
+  it('still accepts an inherited name the payload actually declares', () => {
+    expect(jsonScore('{"constructor":"builder"}', { requiredKeys: ['constructor'] }).score).toBe(0);
+  });
+
+  it('surfaces through checkOutput as INVALID_JSON', () => {
+    const verdict = checkOutput('{"score":8}', {
+      ...presets.strictJson,
+      requiredKeys: ['score', 'constructor'],
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reasons[0].message).toContain('constructor');
+  });
+});

@@ -122,3 +122,69 @@ describe('languageMismatchScore', () => {
     expect(languageMismatchScore(PROSE, 'jv')).toBe(0);
   });
 });
+
+/**
+ * Three bugs found by asking "what shape of input has nobody tried?", which is
+ * the question that found every real defect in this package so far. Two of them
+ * share a root cause -- a lookup that walked the prototype chain -- and the
+ * third is a heuristic reading characters it should not have been counting.
+ */
+describe('structural signals are not read inside string literals', () => {
+  /*
+   * The heuristics count brackets and fences across raw text. A JSON payload
+   * carrying a code snippet -- an extremely ordinary thing for a model to
+   * return -- put those characters inside a string, and complete valid JSON
+   * scored 0.8 or 0.9 as truncated.
+   */
+  it.each([
+    ['an opening brace in a value', '{"note":"the opening brace { is literal","done":true}'],
+    ['a fence in a value', '{"snippet":"```js","done":true}'],
+    ['unbalanced brackets in a value', '{"expr":"a[0] + b(1","done":true}'],
+    ['an array payload', '[{"a":"{"},{"b":"["}]'],
+  ])('scores complete JSON with %s as 0', (_label, payload) => {
+    expect(JSON.parse(payload)).toBeDefined(); // it really is complete
+    expect(truncationScore(payload)).toBe(0);
+  });
+
+  it.each([
+    ['an unclosed fence', 'Here you go:\n```js\nconst a = 1;', 0.9],
+    ['a sentence cut off', 'The tradeoff is that the client has to', 0.55],
+    ['unclosed JSON', '{"a":1,"b":', 0.8],
+  ])('still detects %s', (_label, text, expected) => {
+    expect(truncationScore(text)).toBe(expected);
+  });
+
+  it('lets the provider stop reason win over a parseable payload', () => {
+    // Parseable and cut short at the ceiling are not mutually exclusive.
+    expect(truncationScore('{"a":1}', { finishReason: 'length' })).toBe(1);
+  });
+});
+
+describe('language names are not taken from the prototype chain', () => {
+  const LONG =
+    'the quick brown fox jumps over the lazy dog and then some more words to pass ' +
+    'the minimum word count threshold here and a few extra words for good measure indeed';
+
+  /*
+   * `expected in PROFILES` was true for every name on Object.prototype, so the
+   * guard passed, the target share read a function instead of a number, and the
+   * score came back NaN -- neither above nor below any threshold, which
+   * silently disables the detector and poisons any histogram built from it.
+   */
+  it.each(['toString', 'constructor', 'valueOf', 'hasOwnProperty', '__proto__'])(
+    'abstains on %s rather than returning NaN',
+    (name) => {
+      const score = languageMismatchScore(LONG, name);
+      expect(Number.isFinite(score)).toBe(true);
+      expect(score).toBe(0);
+    },
+  );
+
+  it('still detects a real mismatch', () => {
+    expect(languageMismatchScore(LONG, 'id')).toBeGreaterThan(0.5);
+  });
+
+  it('still passes matching text', () => {
+    expect(languageMismatchScore(LONG, 'en')).toBe(0);
+  });
+});

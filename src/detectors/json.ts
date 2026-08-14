@@ -75,7 +75,15 @@ export function jsonScore(text: string, options: JsonOptions = {}): JsonResult {
       return { score: 1, value, reason: 'missing-keys', missingKeys: [...requiredKeys] };
     }
     const record = value as Record<string, unknown>;
-    const missing = requiredKeys.filter((k) => !(k in record));
+    /*
+     * `Object.hasOwn`, not `k in record`. `in` walks the prototype chain, so
+     * `requiredKeys: ['constructor']` was satisfied by `Object.prototype` and
+     * passed on a payload that did not contain the key at all -- along with
+     * `toString`, `valueOf`, `hasOwnProperty`, `isPrototypeOf`,
+     * `propertyIsEnumerable` and `toLocaleString`. The contract is "keys the
+     * payload must contain", and an inherited name is not one the model wrote.
+     */
+    const missing = requiredKeys.filter((k) => !Object.hasOwn(record, k));
     if (missing.length > 0) {
       return { score: 1, value, reason: 'missing-keys', missingKeys: missing };
     }

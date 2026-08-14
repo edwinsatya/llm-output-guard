@@ -40,7 +40,14 @@ export function languageMismatchScore(
   options: LanguageOptions = {},
 ): number {
   const { minWords = 25 } = options;
-  if (!(expected in PROFILES)) return 0;
+  /*
+   * `Object.hasOwn`, not `expected in PROFILES`. `in` walks the prototype
+   * chain, so `expectLang: 'constructor'` passed this guard, then read
+   * `Object.prototype.constructor` off the profile as its target share and
+   * produced `NaN` -- a score that is neither above nor below any threshold,
+   * silently disabling the detector and poisoning any histogram built from it.
+   */
+  if (!Object.hasOwn(PROFILES, expected)) return 0;
   const w = words(text);
   if (w.length < minWords) return 0;
 
