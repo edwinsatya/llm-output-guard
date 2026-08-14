@@ -6,12 +6,13 @@ import { truncationScore } from './detectors/truncation.js';
 import { jsonScore } from './detectors/json.js';
 import { languageMismatchScore } from './detectors/language.js';
 import { excerpt } from './internal/tokenize.js';
+import { redundancySpans } from './internal/json-scope.js';
 
 const DEFAULTS: Required<
   Pick<CheckOptions,
     'minLength' | 'maxRepetition' | 'maxTailLoop' | 'maxCompressibility' |
     'maxTruncation' | 'expectJson' | 'allowJsonFence' | 'maxLangMismatch' | 'ngram' |
-    'maxCharTailLoop' | 'nonSpacedCutoff'>
+    'maxCharTailLoop' | 'nonSpacedCutoff' | 'redundancyScope'>
 > = {
   minLength: 1,
   maxRepetition: 0.35,
@@ -24,6 +25,7 @@ const DEFAULTS: Required<
   allowJsonFence: true,
   maxLangMismatch: 0.6,
   ngram: 3,
+  redundancyScope: 'document',
 };
 
 /**
@@ -98,8 +100,17 @@ export function checkOutput(
     );
   }
 
+  /*
+   * The spans the redundancy detectors read. One span -- the whole response --
+   * unless `redundancyScope` says otherwise and the payload parses. See
+   * `internal/json-scope.ts` for why a JSON array needs a different span.
+   */
+  const spans = redundancySpans(text, opts.redundancyScope);
+
   if (opts.maxRepetition != null) {
-    const s = repetitionScore(text, { n: opts.ngram });
+    // The worst span, not the average: a loop confined to one array element is
+    // still a loop, and averaging is what hides it.
+    const s = Math.max(...spans.map((span) => repetitionScore(span, { n: opts.ngram })));
     add('REPETITION', s, opts.maxRepetition,
       `${Math.round(s * 100)}% of ${opts.ngram}-grams are duplicates.`);
   }
@@ -112,7 +123,15 @@ export function checkOutput(
    * one mode looks like.
    */
   {
-    const { score, mode } = tailLoopDetail(text, { nonSpacedCutoff: opts.nonSpacedCutoff });
+    // The mode travels with the span that produced the score, because the
+    // threshold is chosen by it -- reporting the worst score against another
+    // span's tokenizer would compare a number to the wrong distribution.
+    let worst = { score: -1, mode: 'word' as TokenMode };
+    for (const span of spans) {
+      const detail = tailLoopDetail(span, { nonSpacedCutoff: opts.nonSpacedCutoff });
+      if (detail.score > worst.score) worst = detail;
+    }
+    const { score, mode } = worst;
     const threshold = mode === 'char' ? opts.maxCharTailLoop : opts.maxTailLoop;
     if (threshold != null) {
       add('TAIL_LOOP', score, threshold,

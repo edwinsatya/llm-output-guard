@@ -121,6 +121,35 @@ as a missing key rather than as whatever the schema calls it.
 > This is the one thing in the package that throws about your configuration; it
 > still never throws about a response.
 
+#### Arrays of repeated records
+
+A model asked for the status of twenty services and returning twenty identical
+rows has done what it was told. Measured across the document that is a perfect
+loop, so `TAIL_LOOP` reads **1.000** and the response fails — under every preset,
+`lenient` included. Three identical records is enough, and an array that is only
+75% repetitive fails on `REPETITION`.
+
+The scores are not wrong; twenty identical records *are* exactly periodic. The
+detectors are being asked about the wrong span. If your payloads look like this,
+scope them:
+
+```ts
+checkOutput(raw, { ...presets.strictJson, redundancyScope: 'jsonValues' });
+```
+
+`REPETITION` and `TAIL_LOOP` then read each string value of a parsed payload on
+its own — repetition **across records** is the shape you asked for, repetition
+**inside a value** is the signal.
+
+It is more sensitive, not less. A loop confined to one element of an array is
+averaged away across a document and reads clearly on its own, so this closes a
+false negative as well as a false positive. Text that does not parse is measured
+as a document regardless, so prose, truncated payloads and every mid-stream check
+are unaffected, as are the six non-redundancy detectors.
+
+It is **opt-in**: switching it on by default would change which of your responses
+get discarded, and this package treats that as a major.
+
 ### Streaming, where it stops costing you tokens
 
 Checking a finished response tells you that you already paid for it. A model
@@ -772,6 +801,7 @@ patches.
 - `REPETITION` does not work on Chinese, Japanese or Thai. See above — this is a known, measured gap, not an oversight.
 - Language detection is a function-word heuristic covering `id`/`en`/`es`. Opt-in, and unreliable under 25 words.
 - Truncation from a missing full stop is weak evidence, scored 0.55 and left below the default thresholds on purpose. Lower `maxTruncation` to ~0.5 to catch it, and expect false positives.
+- A JSON array of repeated identical records reads as a loop under the default scope, and fails from three records up. Set `redundancyScope: 'jsonValues'` — see **Structured output**.
 - Thresholds calibrated on the bundled corpus. Yours will differ — and the word and character thresholds need calibrating **separately**, because they are separate distributions.
 
 ## License

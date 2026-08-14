@@ -120,4 +120,26 @@ export interface CheckOptions {
   maxLangMismatch?: number;
   /** N-gram size for the repetition detector. Default 3. */
   ngram?: number;
+  /**
+   * Which spans `REPETITION` and `TAIL_LOOP` read. Default `'document'`.
+   *
+   * `'document'` measures the whole response at once, which is right for prose
+   * and wrong for a JSON array: twenty identical rows are exactly periodic, so
+   * a model that correctly reported twenty healthy services scores
+   * `TAIL_LOOP: 1.000` and fails. Three identical records is enough.
+   *
+   * `'jsonValues'` measures each string value of a parsed payload on its own,
+   * on the rule that repetition **across records** is the shape that was asked
+   * for and repetition **inside a value** is the signal. Strictly more
+   * sensitive, not less -- a loop confined to one array element is diluted to
+   * nothing across a document and reads clearly on its own.
+   *
+   * Text that does not parse is measured as a document regardless, so prose, a
+   * truncated payload and every mid-stream check behave exactly as before.
+   *
+   * Only the redundancy detectors are affected. `TRUNCATED`, `INVALID_JSON`,
+   * `EMPTY`, `TOO_SHORT`, `LOW_ENTROPY` and `LANG_MISMATCH` read the response
+   * as they always have.
+   */
+  redundancyScope?: 'document' | 'jsonValues';
 }
