@@ -14,6 +14,7 @@
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import * as esbuild from 'esbuild';
 import { checkOutput, presets } from '../dist/index.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -68,11 +69,41 @@ function loadFixtures() {
 
 const fixtures = loadFixtures();
 
-// Strip the ESM export statements: inside an inline module the declarations are
-// already in scope, and nothing is importing this.
-const lib = readFileSync(`${root}dist/index.js`, 'utf8')
-  .replace(/^export \{[^}]*\};?\s*$/gm, '')
-  .trim();
+/**
+ * The library, bundled to a genuinely single file.
+ *
+ * Emphatically not `dist/index.js` with its export statements stripped. That
+ * build is code-split: its first line is `export { checkOutput, ... } from
+ * './chunk-XHP4LSIH.js'`, so inlining it produces a page that asks the browser
+ * for a chunk that was never copied, fails to load the module, and renders an
+ * empty shell. It also fails *silently* -- the file parses fine, and every
+ * static check short of running it passes.
+ *
+ * So the bundling is done here, from source, with splitting off. The chunk name
+ * carries a content hash and changes on any build, which is one more reason not
+ * to depend on its shape.
+ */
+async function bundleLibrary() {
+  const result = await esbuild.build({
+    entryPoints: [`${root}src/index.ts`],
+    bundle: true,
+    splitting: false,
+    format: 'esm',
+    target: 'es2022',
+    platform: 'browser',
+    write: false,
+    legalComments: 'none',
+  });
+  // The bundle ends in one export statement; inside an inline module the
+  // declarations are already in scope and nothing imports this.
+  return result.outputFiles[0].text.replace(/^export \{[\s\S]*?\};?\s*$/m, '').trim();
+}
+
+const lib = await bundleLibrary();
+
+if (!/function checkOutput/.test(lib) || !/presets\s*=/.test(lib)) {
+  throw new Error('bundle is missing checkOutput or presets — the page would render empty');
+}
 
 const page = String.raw`<title>Degeneracy Bench</title>
 <style>

@@ -319,7 +319,453 @@
 </div>
 
 <script type="module">
-export { DegenerateOutputError, assertOutput, checkOutput, compressibilityScore, compressionRatio, createStreamGuard, emptinessScore, guardStream, jsonScore, languageMismatchScore, languageProfile, repetitionScore, shortnessScore, stripFence, supportedLanguages, tailLoopDetail, tailLoopScore, truncationScore } from './chunk-XHP4LSIH.js';
+// src/internal/tokenize.ts
+function words(text) {
+  return text.toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? [];
+}
+function chars(text) {
+  return [...text.replace(/\s+/g, "")];
+}
+var NON_SPACED = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}]/gu;
+function nonSpacedRatio(text) {
+  const total = text.match(/[\p{L}\p{M}]/gu)?.length ?? 0;
+  if (total === 0) return 0;
+  return (text.match(NON_SPACED)?.length ?? 0) / total;
+}
+function tokenModeOf(text, cutoff = 0.5) {
+  return nonSpacedRatio(text) >= cutoff ? "char" : "word";
+}
+function clamp01(n) {
+  if (Number.isNaN(n)) return 0;
+  return n < 0 ? 0 : n > 1 ? 1 : n;
+}
+function excerpt(text, max = 80) {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length <= max ? flat : flat.slice(0, max) + "\u2026";
+}
+
+// src/detectors/repetition.ts
+function repetitionScore(text, options = {}) {
+  const { n = 3, maxSample = 8e3 } = options;
+  const w = words(text.slice(0, maxSample));
+  if (w.length < n * 4) return 0;
+  const seen = /* @__PURE__ */ new Set();
+  let total = 0;
+  for (let i = 0; i + n <= w.length; i++) {
+    seen.add(w.slice(i, i + n).join(" "));
+    total++;
+  }
+  if (total === 0) return 0;
+  return clamp01(1 - seen.size / total);
+}
+function periodicCoverage(tail, maxPeriod, minRepeats) {
+  if (tail.length < minRepeats * 2) return 0;
+  let best = 0;
+  const periodCap = Math.min(maxPeriod, Math.floor(tail.length / minRepeats));
+  for (let p = 1; p <= periodCap; p++) {
+    const block = tail.slice(tail.length - p);
+    let repeats = 1;
+    let cursor = tail.length - p;
+    while (cursor - p >= 0) {
+      let same = true;
+      for (let k = 0; k < p; k++) {
+        if (tail[cursor - p + k] !== block[k]) {
+          same = false;
+          break;
+        }
+      }
+      if (!same) break;
+      repeats++;
+      cursor -= p;
+    }
+    if (repeats >= minRepeats) {
+      best = Math.max(best, clamp01(repeats * p / tail.length));
+    }
+  }
+  return best;
+}
+function tailLoopDetail(text, options = {}) {
+  const {
+    tailWords = 200,
+    maxPeriod = 40,
+    minRepeats = 3,
+    tailChars = 400,
+    maxCharPeriod = 80,
+    minCharSample = 80,
+    nonSpacedCutoff = 0.5
+  } = options;
+  const charTail = chars(text).slice(-tailChars);
+  const mode = options.mode ?? tokenModeOf(charTail.join(""), nonSpacedCutoff);
+  if (mode === "char") {
+    if (charTail.length < minCharSample) return { score: 0, mode };
+    return { score: periodicCoverage(charTail, maxCharPeriod, minRepeats), mode };
+  }
+  const tail = words(text).slice(-tailWords);
+  return { score: periodicCoverage(tail, maxPeriod, minRepeats), mode };
+}
+function tailLoopScore(text, options = {}) {
+  return tailLoopDetail(text, options).score;
+}
+
+// src/detectors/compressibility.ts
+function compressionRatio(text, options = {}) {
+  const { window = 1024, maxSample = 4e3, minMatch = 4 } = options;
+  const s = text.slice(0, maxSample);
+  if (s.length < 64) return 1;
+  let i = 0;
+  let emitted = 0;
+  while (i < s.length) {
+    let bestLen = 0;
+    const start = i > window ? i - window : 0;
+    for (let j = start; j < i; j++) {
+      let k = 0;
+      while (k < 255 && i + k < s.length && s[j + k] === s[i + k]) k++;
+      if (k > bestLen) {
+        bestLen = k;
+        if (bestLen >= 255) break;
+      }
+    }
+    emitted++;
+    i += bestLen >= minMatch ? bestLen : 1;
+  }
+  return emitted / s.length;
+}
+function compressibilityScore(text, options = {}) {
+  const { pivot = 0.32, ...rest } = options;
+  if (text.trim().length < 64) return 0;
+  return clamp01(1 - compressionRatio(text, rest) / pivot);
+}
+
+// src/detectors/emptiness.ts
+function emptinessScore(text) {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return 1;
+  if (words(trimmed).length === 0) return 1;
+  const stripped = trimmed.replace(/```[a-z]*\s*```/gi, "").replace(/^[{}[\]"'\s,.:;!?-]+$/g, "");
+  return stripped.trim().length === 0 ? 1 : 0;
+}
+function shortnessScore(text, minChars) {
+  if (minChars <= 0) return 0;
+  const len = text.trim().length;
+  if (len >= minChars) return 0;
+  return 1 - len / minChars;
+}
+
+// src/detectors/truncation.ts
+var LENGTH_STOPS = /* @__PURE__ */ new Set(["length", "max_tokens", "maxtokens", "max_output_tokens", "token_limit"]);
+var TERMINAL = /[.!?"'`\u2019\u201d)\]}:;\u3002\uff01\uff1f]\s*$/;
+function truncationScore(text, options = {}) {
+  const { finishReason } = options;
+  if (finishReason && LENGTH_STOPS.has(finishReason.toLowerCase())) return 1;
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return 0;
+  let score = 0;
+  const fences = (trimmed.match(/```/g) ?? []).length;
+  if (fences % 2 === 1) score = Math.max(score, 0.9);
+  for (const [open, close] of [["{", "}"], ["[", "]"], ["(", ")"]]) {
+    const opens = trimmed.split(open).length - 1;
+    const closes = trimmed.split(close).length - 1;
+    if (opens > closes) score = Math.max(score, 0.8);
+  }
+  if (!TERMINAL.test(trimmed)) score = Math.max(score, 0.55);
+  return score;
+}
+
+// src/detectors/json.ts
+function stripFence(text) {
+  const fenced = text.trim().match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fenced ? fenced[1] : text.trim();
+}
+function describe(issue) {
+  const path = (issue.path ?? []).map(
+    (segment) => typeof segment === "object" && segment !== null && "key" in segment ? String(segment.key) : String(segment)
+  ).join(".");
+  return path ? `${path}: ${issue.message}` : issue.message;
+}
+function jsonScore(text, options = {}) {
+  const { allowFence = true, requiredKeys = [], schema } = options;
+  const candidate = allowFence ? stripFence(text) : text.trim();
+  let value;
+  try {
+    value = JSON.parse(candidate);
+  } catch {
+    return { score: 1, reason: "unparseable" };
+  }
+  if (requiredKeys.length > 0) {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return { score: 1, value, reason: "missing-keys", missingKeys: [...requiredKeys] };
+    }
+    const record = value;
+    const missing = requiredKeys.filter((k) => !(k in record));
+    if (missing.length > 0) {
+      return { score: 1, value, reason: "missing-keys", missingKeys: missing };
+    }
+  }
+  if (schema) {
+    const result = schema["~standard"].validate(value);
+    if (typeof result?.then === "function") {
+      throw new TypeError(
+        "llm-output-guard: `schema` must validate synchronously, and this one returned a promise. checkOutput is synchronous by design. Remove the async refinement, or validate the payload yourself after checkOutput returns."
+      );
+    }
+    const sync = result;
+    if (sync.issues) {
+      return { score: 1, value, reason: "schema", issues: sync.issues.map(describe) };
+    }
+    return { score: 0, value: sync.value };
+  }
+  return { score: 0, value };
+}
+
+// src/detectors/language.ts
+var PROFILES = {
+  id: /* @__PURE__ */ new Set(["yang", "dan", "di", "untuk", "dengan", "ini", "itu", "dari", "pada", "tidak", "adalah", "akan", "bisa", "kita", "saya", "atau", "juga", "dalam", "sudah", "ke"]),
+  en: /* @__PURE__ */ new Set(["the", "and", "of", "to", "in", "is", "that", "for", "it", "with", "as", "this", "are", "be", "you", "on", "not", "or", "can", "we"]),
+  es: /* @__PURE__ */ new Set(["el", "la", "de", "que", "y", "en", "los", "un", "por", "con", "las", "para", "una", "es", "no", "se", "del", "al", "lo", "como"])
+};
+function languageProfile(text) {
+  const w = words(text);
+  const out = {};
+  if (w.length === 0) return out;
+  for (const [lang, set] of Object.entries(PROFILES)) {
+    let hits = 0;
+    for (const token of w) if (set.has(token)) hits++;
+    out[lang] = hits / w.length;
+  }
+  return out;
+}
+function languageMismatchScore(text, expected, options = {}) {
+  const { minWords = 25 } = options;
+  if (!(expected in PROFILES)) return 0;
+  const w = words(text);
+  if (w.length < minWords) return 0;
+  const profile = languageProfile(text);
+  const target = profile[expected] ?? 0;
+  const best = Math.max(...Object.values(profile));
+  if (best === 0) return 0;
+  if (target >= best) return 0;
+  return Math.min(1, (best - target) / best);
+}
+var supportedLanguages = Object.keys(PROFILES);
+
+// src/check.ts
+var DEFAULTS = {
+  minLength: 1,
+  maxRepetition: 0.35,
+  maxTailLoop: 0.5,
+  maxCharTailLoop: 0.7,
+  nonSpacedCutoff: 0.5,
+  maxCompressibility: 0.75,
+  maxTruncation: null,
+  expectJson: false,
+  allowJsonFence: true,
+  maxLangMismatch: 0.6,
+  ngram: 3
+};
+function checkOutput(text, options = {}) {
+  const opts = { ...DEFAULTS, ...options };
+  const reasons = [];
+  const scores = {};
+  const modes = {};
+  let parsedJson;
+  const add = (code, score, threshold, message, mode) => {
+    scores[code] = score;
+    if (mode) modes[code] = mode;
+    if (score > threshold) reasons.push({ code, score, threshold, message, ...mode && { mode } });
+  };
+  if (typeof text !== "string") {
+    scores.EMPTY = 1;
+    reasons.push({
+      code: "EMPTY",
+      score: 1,
+      threshold: 0.5,
+      message: `Response was ${text === null ? "null" : typeof text}, not a string.`
+    });
+    return { ok: false, reasons, scores };
+  }
+  const empty = emptinessScore(text);
+  add("EMPTY", empty, 0.5, "Response contains no usable content.");
+  if (empty >= 1) {
+    return { ok: false, reasons, scores };
+  }
+  if (opts.minLength > 0) {
+    add(
+      "TOO_SHORT",
+      shortnessScore(text, opts.minLength),
+      0,
+      `Response is ${text.trim().length} chars, below the ${opts.minLength} minimum.`
+    );
+  }
+  if (opts.maxRepetition != null) {
+    const s = repetitionScore(text, { n: opts.ngram });
+    add(
+      "REPETITION",
+      s,
+      opts.maxRepetition,
+      `${Math.round(s * 100)}% of ${opts.ngram}-grams are duplicates.`
+    );
+  }
+  {
+    const { score, mode } = tailLoopDetail(text, { nonSpacedCutoff: opts.nonSpacedCutoff });
+    const threshold = mode === "char" ? opts.maxCharTailLoop : opts.maxTailLoop;
+    if (threshold != null) {
+      add(
+        "TAIL_LOOP",
+        score,
+        threshold,
+        `Response ends in a repeating block covering ${Math.round(score * 100)}% of the tail.`,
+        mode
+      );
+    }
+  }
+  if (opts.maxCompressibility != null) {
+    const s = compressibilityScore(text);
+    add(
+      "LOW_ENTROPY",
+      s,
+      opts.maxCompressibility,
+      "Response is far more compressible than natural language."
+    );
+  }
+  if (opts.maxTruncation != null || opts.finishReason) {
+    const s = truncationScore(text, { finishReason: opts.finishReason });
+    add(
+      "TRUNCATED",
+      s,
+      opts.maxTruncation ?? 0.75,
+      `Response appears cut off near: "${excerpt(text.trim().slice(-60), 60)}"`
+    );
+  }
+  if (opts.expectJson) {
+    const result = jsonScore(text, {
+      allowFence: opts.allowJsonFence,
+      requiredKeys: opts.requiredKeys,
+      schema: opts.schema
+    });
+    parsedJson = result.value;
+    add(
+      "INVALID_JSON",
+      result.score,
+      0,
+      result.reason === "missing-keys" ? `JSON is missing required keys: ${result.missingKeys?.join(", ")}.` : result.reason === "schema" ? `JSON does not match the schema: ${result.issues?.join("; ")}.` : "Response is not parseable JSON."
+    );
+  }
+  if (opts.expectLang) {
+    const s = languageMismatchScore(text, opts.expectLang);
+    add(
+      "LANG_MISMATCH",
+      s,
+      opts.maxLangMismatch,
+      `Response does not look like '${opts.expectLang}'.`
+    );
+  }
+  return {
+    ok: reasons.length === 0,
+    reasons,
+    scores,
+    ...Object.keys(modes).length > 0 && { modes },
+    json: parsedJson
+  };
+}
+var DegenerateOutputError = class extends Error {
+  verdict;
+  /** Marks this as safe to retry against another provider. */
+  retryable = true;
+  constructor(verdict) {
+    super(`Degenerate LLM output: ${verdict.reasons.map((r) => r.code).join(", ")}`);
+    this.name = "DegenerateOutputError";
+    this.verdict = verdict;
+  }
+};
+function assertOutput(text, options = {}) {
+  const verdict = checkOutput(text, options);
+  if (!verdict.ok) throw new DegenerateOutputError(verdict);
+  return text;
+}
+
+// src/stream.ts
+var DEFERRED_TO_END = {
+  minLength: 0,
+  maxTruncation: null,
+  expectJson: false,
+  expectLang: null,
+  finishReason: void 0,
+  /*
+   * LOW_ENTROPY is deferred for a second reason: cost. The LZ77 pass is
+   * 0.4ms at 500 characters and 11ms at its 4000-character sample cap, which
+   * is 100x the other two detectors combined -- affordable once per response,
+   * ruinous every few hundred characters of every stream.
+   *
+   * DEFERRING IT IS CONDITIONAL, NOT FREE. The condition is that the redundancy
+   * detectors still running here reach a verdict *earlier* than LOW_ENTROPY
+   * would have, on every script. Two things make that true today:
+   *
+   *   - For spaced scripts, REPETITION catches what LOW_ENTROPY would, because
+   *     character-level collapse is also n-gram collapse.
+   *   - For Han, Kana and Thai, REPETITION is blind -- a loop with no
+   *     punctuation is a single word token -- and TAIL_LOOP's character mode is
+   *     what covers it. Measured at the 240-character warmup, that mode scores
+   *     0.854-1.000 on every degenerate CJK fixture and fires on the first
+   *     check. At that same moment LOW_ENTROPY reads 0.453-0.805, i.e. below
+   *     its own 0.75 threshold on most of them: running it here would detect
+   *     these *later*, at 100x the cost.
+   *
+   * SO THIS BREAKS IF: character dispatch is disabled (`maxCharTailLoop: null`,
+   * or `nonSpacedCutoff` raised out of reach), or `warmup` is raised past the
+   * point where a loop's periodicity has established itself in the window. A
+   * 15-character loop unit repeats 16 times in 240 characters against a
+   * `minRepeats` of 3, so there is room -- but it is room, not immunity. If you
+   * change either, re-measure before assuming this deferral is still safe;
+   * otherwise CJK streams silently lose mid-stream detection entirely and the
+   * only thing left is the end() check, which is after you have paid.
+   */
+  maxCompressibility: null
+};
+function createStreamGuard(options = {}) {
+  const { checkEvery = 400, warmup = 240, window = 2e3, ...checkOptions } = options;
+  let text = "";
+  let sinceCheck = 0;
+  let checks = 0;
+  const due = () => checks === 0 ? text.length >= warmup : sinceCheck >= checkEvery;
+  return {
+    get text() {
+      return text;
+    },
+    get checks() {
+      return checks;
+    },
+    push(chunk) {
+      if (typeof chunk !== "string" || chunk.length === 0) return null;
+      text += chunk;
+      sinceCheck += chunk.length;
+      if (!due()) return null;
+      sinceCheck = 0;
+      checks += 1;
+      const recent = text.length > window ? text.slice(-window) : text;
+      return checkOutput(recent, { ...checkOptions, ...DEFERRED_TO_END });
+    },
+    end(finishReason) {
+      return checkOutput(text, {
+        ...checkOptions,
+        finishReason: finishReason ?? checkOptions.finishReason
+      });
+    }
+  };
+}
+async function* guardStream(source, options = {}) {
+  const { onDegenerate, onEnd, stopOnDegenerate = true, ...guardOptions } = options;
+  const guard = createStreamGuard(guardOptions);
+  let degenerate = false;
+  for await (const chunk of source) {
+    yield chunk;
+    const verdict = guard.push(chunk);
+    if (!verdict || verdict.ok || degenerate) continue;
+    degenerate = true;
+    onDegenerate?.(verdict);
+    if (stopOnDegenerate) return;
+  }
+  if (!degenerate) onEnd?.(guard.end());
+}
 
 // src/calibrate.ts
 function percentile(sorted, p) {
@@ -463,10 +909,6 @@ var presets = {
     maxCompressibility: 0.9
   }
 };
-
-
-//# sourceMappingURL=index.js.map
-//# sourceMappingURL=index.js.map
 
 const FIXTURES = {"degenerate":[{"id":"repetition-word-stutter","note":"Single-token stutter, no sentence structure at all.","text":"interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview","preset":"chat"},{"id":"repetition-clause-loop","note":"Classic degenerate loop. This is the shape the gemma retry storm produced.","text":"The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React.","preset":"chat"},{"id":"tail-loop-after-good-start","note":"First half is fine, then it falls into a loop. Whole-output repetition scores low here.","text":"Based on the repositories, this candidate works primarily in TypeScript with a focus on frontend architecture. They have shipped several production applications and show comfort with server-side rendering, state management, and API design across a range of project sizes and problem domains they encountered.\n\nPlease describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing.","preset":"chat"},{"id":"cjk-tail-loop-zh-nopunct","note":"Chinese loop with no punctuation inside it. The whole 640 characters are a single word() token, so REPETITION and word-mode TAIL_LOOP both score 0.000. Char-mode TAIL_LOOP scores 1.000. This is the fixture the character dispatch exists for.","text":"我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题","preset":"chat"},{"id":"low-entropy-charspam","note":"Character-level collapse with no word boundaries for n-grams to catch.","text":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","preset":"chat"},{"id":"truncated-mid-sentence","note":"Hit the token ceiling mid-clause.","text":"The candidate demonstrates solid familiarity with distributed caching, and in particular their use of Redis for session state suggests they have thought carefully about the tradeoffs between","preset":"strictJson"},{"id":"empty-json-braces","note":"Empty JSON envelope where content was expected.","text":"{}","preset":"strictJson"},{"id":"invalid-json-prose-wrapper","note":"Model chatted around the payload instead of emitting bare JSON.","text":"Sure! Here is the JSON you requested:\n\n{ \"score\": 8, \"notes\": \"solid\" }\n\nLet me know if you need anything else.","preset":"strictJson"}],"healthy":[{"id":"markdown-table","note":"TRAP: pipes and dashes look like low-entropy noise.","text":"| Provider | Median latency | Failure rate |\n| --- | --- | --- |\n| Gemini | 820ms | 0.4% |\n| Groq | 310ms | 1.2% |\n| Local | 2100ms | 0.0% |\n\nGroq is fastest but least reliable, which is exactly why it belongs second in the chain rather than first.","preset":"chat"},{"id":"list-repeated-prefix","note":"TRAP: every line starts identically. A naive n-gram check flags this.","text":"Pertanyaan yang bisa diajukan:\n\n1. Bagaimana kamu menentukan kapan sebuah komponen perlu dipecah?\n2. Bagaimana kamu menangani race condition di sisi klien?\n3. Bagaimana kamu memutuskan antara server component dan client component?\n4. Bagaimana kamu mengukur dampak perubahan terhadap performa?\n5. Bagaimana kamu menangani error dari pihak ketiga yang tidak stabil?","preset":"chat"},{"id":"prose-en-with-refrain","note":"TRAP: deliberate rhetorical repetition, which is legitimate writing.","text":"It is not a framework problem. It is not a language problem. It is not even a scaling problem. What you are looking at is a design problem, and no amount of infrastructure will paper over it. The queue you added last quarter moved the symptom rather than removing it, and the retry logic you added on top moved it again.","preset":"chat"},{"id":"code-block-typescript","note":"TRAP: code repeats syntax heavily and ends on a brace.","text":"Here is the wrapper:\n\n```ts\nexport async function withFallback<T>(fns: Array<() => Promise<T>>): Promise<T> {\n  let last: unknown;\n  for (const fn of fns) {\n    try {\n      return await fn();\n    } catch (err) {\n      last = err;\n    }\n  }\n  throw last;\n}\n```\n\nIt tries each function in order and rethrows the final error if all of them fail.","preset":"chat"},{"id":"prose-zh-poem-refrain","note":"Trap. A six-times refrain closing a Chinese poem -- legitimate, and the healthy end of the same curve cjk-refrain-x20 sits at the degenerate end of. Char TAIL_LOOP scores 0.291 here against a 0.7 threshold. The curve crosses at roughly ten consecutive repeats.","text":"用户要求写一段关于离别的短诗，下面是我的尝试。整体的节奏偏慢，重复的句子用来收束情绪，这是这一类作品里常见的处理方式。如果你希望更克制一些，可以把最后的重复减少到两次。\n\n站台的灯一盏一盏亮起来\n行李比来时更重\n你说的那句再见\n被风吹散在铁轨上\n\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n","preset":"chat"},{"id":"prose-zh-repeated-prefix-steps","note":"Trap, and the CJK analogue of list-repeated-prefix. Every step opens with the identical verb phrase.","text":"发布流程如下，请按顺序执行，任何一步没有通过都不要继续往下走。\n\n请先确认配置文件中的数据库地址已经指向生产实例，而不是预发环境。\n请先确认镜像标签与发布单上记录的版本号完全一致，包括构建号后缀。\n请先确认灰度比例已经设置为百分之五，并且监控面板处于打开状态。\n请先确认回滚脚本可以在两分钟之内执行完毕，必要时提前演练一次。\n请先确认值班同事已经收到本次发布的通知，并且确认过时间窗口。\n请先确认变更记录已经写入内部文档，包含影响范围和回滚方式。","preset":"chat"},{"id":"prose-en-technical-explanation","note":"Normal English answer.","text":"Circuit breakers work by tracking consecutive failures against a threshold. Once that threshold is crossed the breaker opens and subsequent calls fail immediately, without touching the downstream service. After a cooldown window the breaker moves to a half-open state and allows a single trial request through. If that request succeeds the breaker closes again; if it fails, the cooldown restarts.","preset":"chat"},{"id":"json-fenced-valid","note":"Valid JSON inside a fence -- common and acceptable.","text":"```json\n{\n  \"score\": 6,\n  \"notes\": \"Mixed signal.\",\n  \"followUp\": []\n}\n```","preset":"strictJson"}]};
 
