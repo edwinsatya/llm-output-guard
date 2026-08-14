@@ -213,7 +213,8 @@ call `checkOutput` on the result yourself.
 
 ### OpenAI SDK — and anything speaking its protocol
 
-One wrap, and both call shapes are guarded:
+One wrap, and both APIs are guarded — `chat.completions.create` and
+`responses.create`, streaming and not:
 
 ```ts
 import OpenAI from 'openai';
@@ -224,12 +225,30 @@ const client = withOutputGuard(new OpenAI(), {
   ...presets.chat,
   onDegenerate: 'abort',
 });
+
+await client.chat.completions.create({ model, messages });   // guarded
+await client.responses.create({ model, input });             // guarded
 ```
+
+The Responses API spells its stop reason `incomplete_details.reason` rather than
+`finish_reason`, and its length stop `max_output_tokens` rather than `length`.
+Both are mapped, so `TRUNCATED` fires the same way on either. `content_filter`
+is deliberately *not* read as truncation — a filtered response is a different
+failure, and reporting it as `TRUNCATED` would send a retry layer after the
+wrong fix.
+
+> **`responses.stream()` is not guarded.** It returns a `ResponseStream` — an
+> event emitter with `.on()` and `.finalResponse()`, not just an async iterable
+> — and wrapping only its iteration would guard a `for await` consumer while
+> leaving `.finalResponse()` unchecked. A guard you believe in and do not have
+> is the failure this package was written about, so it is left plainly
+> unguarded rather than half-wrapped. Use `create({ stream: true })`, which is
+> guarded, or run `checkOutput` on `await stream.finalResponse()` yourself.
 
 This is also how you guard **Groq, Together, OpenRouter, Fireworks, DeepInfra,
 vLLM and Ollama** — anything you reach through an OpenAI-compatible `baseURL`
-works, because the adapter is typed against the chat-completions shape rather
-than against OpenAI the company.
+works, because the adapter is typed against the wire shapes rather than against
+OpenAI the company.
 
 Non-streaming calls are already paid for by the time anything can run, so a
 degenerate one throws `DegenerateOutputError` for your fallback layer to catch:
@@ -290,6 +309,33 @@ other detectors, and everything it would have caught early is caught by
 
 Both adapters share this behaviour because both drive the same
 `createStreamGuard`. Neither reimplements it.
+
+### Tool calls and agents
+
+A model that answers by calling a tool returns no assistant text — OpenAI sends
+`content: null` beside `tool_calls`, and the AI SDK sends a `content` array with
+no `text` part. Handed to `checkOutput`, that is an empty string, and an empty
+string scores `EMPTY`.
+
+So **the presence of tool calls means the text, if any, is a preamble rather
+than the answer**, and both adapters judge it as one:
+
+| | On a tool-calling turn |
+|---|---|
+| No text at all | Nothing is judged, and nothing is reported to `onVerdict` |
+| Text beside the call | `REPETITION`, `TAIL_LOOP` and `LOW_ENTROPY` still run |
+| `TOO_SHORT` | Off — "Let me look that up" is sixteen characters and correct |
+| `TRUNCATED` | Off — a preamble ends without terminal punctuation as a matter of course |
+| `INVALID_JSON` | Off — the JSON is in the call arguments, which your provider already validated against the schema |
+
+The redundancy detectors stay on because a model looping in its preamble is
+still a model that is looping. `EMPTY` is not disarmed either: a response with
+neither text nor tool calls still fails, which is the case this package exists
+for.
+
+Nothing is reported to `onVerdict` for a text-free tool call on purpose. Those
+samples are what a `calibrate` run is built from, and a spike of `EMPTY: 1` in
+them would describe your agent's tool use rather than any degeneration.
 
 ---
 
@@ -629,6 +675,8 @@ patches.
 ## Limitations
 
 - Not a hallucination detector. It measures *shape*, never truth.
+- Tool *arguments* are not checked, only the prose beside them. A model that loops inside a JSON argument string is invisible here — your provider validates those against the schema you gave it.
+- `openai`'s `responses.stream()` helper is not wrapped. See the note above; `create({ stream: true })` is.
 - `REPETITION` does not work on Chinese, Japanese or Thai. See above — this is a known, measured gap, not an oversight.
 - Language detection is a function-word heuristic covering `id`/`en`/`es`. Opt-in, and unreliable under 25 words.
 - Truncation from a missing full stop is weak evidence, scored 0.55 and left below the default thresholds on purpose. Lower `maxTruncation` to ~0.5 to catch it, and expect false positives.

@@ -13,6 +13,7 @@ import type { StreamGuardOptions } from './stream.js';
 import type { AdapterGuardOptions, DegenerateAction } from './internal/adapter-options.js';
 import { checkOutput, DegenerateOutputError } from './check.js';
 import { createStreamGuard } from './stream.js';
+import { checkPreamble } from './internal/tool-calls.js';
 
 /** `'stop' | 'length' | ...` in older specs, `{ unified, raw }` in v4. */
 type FinishReasonLike = string | { unified?: string; raw?: string } | null | undefined;
@@ -26,6 +27,18 @@ interface StreamPart {
   /** Present on the `finish` part. */
   finishReason?: FinishReasonLike;
 }
+
+/**
+ * Whether a part is the model calling a tool.
+ *
+ * Matched by prefix rather than by an exact list because the spec has several
+ * and has added to them across versions: `tool-call` on a finished generation,
+ * and `tool-input-start` / `tool-input-delta` / `tool-input-end` while
+ * streaming. A prefix keeps a part type added in a later `ai` major from
+ * silently reading as prose, which is the direction that reintroduces the false
+ * positive this guards against.
+ */
+const isToolPart = (part: StreamPart): boolean => part.type.startsWith('tool-');
 
 interface GenerateResultLike {
   content?: StreamPart[];
@@ -105,10 +118,23 @@ export function outputGuard(options: OutputGuardOptions = {}) {
       doGenerate: () => PromiseLike<T>;
     }): Promise<T> {
       const result = await doGenerate();
-      const text = (result.content ?? [])
+      const content = result.content ?? [];
+      const text = content
         .filter((part) => part.type === 'text')
         .map((part) => part.text ?? '')
         .join('');
+
+      /*
+       * A tool call is an answer, just not a textual one. Judging its (absent)
+       * text as a response would fail every tool-calling turn on `EMPTY` --
+       * see `internal/tool-calls.ts` for why that is the detector being asked
+       * the wrong question rather than the detector being wrong.
+       */
+      if (content.some(isToolPart)) {
+        const verdict = checkPreamble(text, guardOptions);
+        if (verdict) act(verdict, false);
+        return result;
+      }
 
       act(
         checkOutput(text, {
@@ -129,6 +155,7 @@ export function outputGuard(options: OutputGuardOptions = {}) {
       const result = await doStream();
       const guard = createStreamGuard(guardOptions);
       let fired = false;
+      let sawToolCall = false;
       let finishReason: FinishReasonLike;
 
       const guarded = result.stream.pipeThrough(
@@ -139,6 +166,7 @@ export function outputGuard(options: OutputGuardOptions = {}) {
             controller.enqueue(part);
 
             if (part.type === 'finish') finishReason = part.finishReason;
+            if (isToolPart(part)) sawToolCall = true;
             if (part.type !== 'text-delta' || fired) return;
 
             const verdict = guard.push(part.delta ?? '');
@@ -163,9 +191,23 @@ export function outputGuard(options: OutputGuardOptions = {}) {
           flush() {
             // A stream we cut short would only be reported as truncated by us,
             // describing our own abort rather than the model.
-            if (!fired) {
-              onVerdict?.(guard.end(finishReasonOf(finishReason)), { streaming: true });
+            if (fired) return;
+
+            /*
+             * Same rule as `wrapGenerate`, and it matters here even though
+             * nothing throws on this path: a tool-call stream carries no text
+             * deltas, so `end()` would report `EMPTY: 1` to `onVerdict` on
+             * every one. Those samples are what a `calibrate` run is built
+             * from, and a spike of them describes the agent's tool use rather
+             * than any degeneration.
+             */
+            if (sawToolCall) {
+              const verdict = checkPreamble(guard.text, guardOptions);
+              if (verdict) onVerdict?.(verdict, { streaming: true });
+              return;
             }
+
+            onVerdict?.(guard.end(finishReasonOf(finishReason)), { streaming: true });
           },
         }),
       );
