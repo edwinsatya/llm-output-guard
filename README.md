@@ -8,7 +8,7 @@
 **Detect LLM responses that failed while returning `200 OK`.**
 
 [![npm](https://img.shields.io/npm/v/llm-output-guard?color=0b7285)](https://www.npmjs.com/package/llm-output-guard)
-[![downloads](https://img.shields.io/npm/dm/llm-output-guard?color=0b7285)](https://www.npmjs.com/package/llm-output-guard)
+[![downloads](https://img.shields.io/npm/dm/llm-output-guard?color=0b7285&cacheSeconds=86400)](https://www.npmjs.com/package/llm-output-guard)
 [![minzipped](https://img.shields.io/bundlejs/size/llm-output-guard?color=0b7285&label=min%2Bgzip)](https://bundlejs.com/?q=llm-output-guard)
 [![dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](https://github.com/edwinsatya/llm-output-guard/blob/main/package.json)
 [![CI](https://github.com/edwinsatya/llm-output-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/edwinsatya/llm-output-guard/actions/workflows/ci.yml)
