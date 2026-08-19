@@ -1,0 +1,26 @@
+{
+  "id": "script-mismatch-ru-for-en",
+  "category": "script-mismatch",
+  "note": "The same failure in a script the word tokenizer handles fine. REPETITION and TAIL_LOOP see healthy Cyrillic prose and correctly say nothing, which is why a script check is the only thing here that fires.",
+  "text": "Ответ на этот вопрос зависит от того, как именно вы разворачиваете приложение. Если вы используете оркестратор контейнеров, проверки состояния следует настраивать на его уровне, а не внутри самого приложения. Иначе одна и та же логика окажется в двух местах, и поведение при масштабировании станет непредсказуемым. На обычных виртуальных машинах выбора нет, и тогда важно отделить проверку живости от проверки готовности.",
+  "options": {
+    "expectScript": "latin"
+  },
+  "expect": [
+    "SCRIPT_MISMATCH"
+  ],
+  "measured": {
+    "chars": 421,
+    "wordTokens": 60,
+    "nonSpacedRatio": 0,
+    "tailLoop": {
+      "score": 0,
+      "mode": "word"
+    },
+    "scores": {
+      "REPETITION": 0,
+      "TAIL_LOOP": 0,
+      "SCRIPT_MISMATCH": 1
+    }
+  }
+}

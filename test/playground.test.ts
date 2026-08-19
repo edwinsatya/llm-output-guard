@@ -122,13 +122,13 @@ describe('the playground actually runs', () => {
     expect(labels).toEqual(['chat', 'strictJson', 'longForm', 'lenient']);
   });
 
-  it('renders a meter for all eight detectors', () => {
+  it('renders a meter for all nine detectors', () => {
     const codes = [...doc.querySelectorAll('.meter .code')].map((n) =>
       (n.textContent ?? '').replace(/\s*\[.*$/, '').trim(),
     );
     expect(codes).toEqual([
       'EMPTY', 'TOO_SHORT', 'REPETITION', 'TAIL_LOOP',
-      'LOW_ENTROPY', 'TRUNCATED', 'INVALID_JSON', 'LANG_MISMATCH',
+      'LOW_ENTROPY', 'TRUNCATED', 'INVALID_JSON', 'SCRIPT_MISMATCH', 'LANG_MISMATCH',
     ]);
   });
 

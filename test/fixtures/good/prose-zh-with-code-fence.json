@@ -1,0 +1,25 @@
+{
+  "id": "prose-zh-with-code-fence",
+  "category": "script-trap",
+  "note": "A correct Chinese answer that happens to contain a TypeScript block and a URL. Every identifier in it is Latin because TypeScript is, and counting them is how a healthy response gets discarded. The detector strips fences, inline code and URLs before measuring, so this scores 0.000; measured against 'han' with ignoreCode disabled, the same text scores 0.632.",
+  "text": "你可以在客户端层面统一配置重试逻辑，而不是在每个调用点都写一遍。下面这段代码把重试次数和超时时间集中放在一处，出问题时只需要改一个地方。注意 `maxRetries` 只对网络层面的失败生效，模型返回了内容但内容本身有问题的情况，它是看不见的，那部分需要你自己判断。\n\n```ts\nconst client = new OpenAI({ maxRetries: 3, timeout: 30_000 });\n\nasync function callWithFallback(prompt: string) {\n  const response = await client.chat.completions.create({\n    model: 'gpt-4.1',\n    messages: [{ role: 'user', content: prompt }],\n  });\n  return response.choices[0]?.message?.content;\n}\n```\n\n更详细的错误分类可以参考官方文档 https://platform.openai.com/docs/guides/error-handling 这一节，里面列出了每种状态码建议的处理方式。",
+  "options": {
+    "expectScript": [
+      "han",
+      "latin"
+    ]
+  },
+  "measured": {
+    "chars": 541,
+    "wordTokens": 58,
+    "nonSpacedRatio": 0.368,
+    "tailLoop": {
+      "score": 0,
+      "mode": "word"
+    },
+    "scores": {
+      "REPETITION": 0,
+      "SCRIPT_MISMATCH": 0
+    }
+  }
+}

@@ -15,6 +15,7 @@ and get different treatment:
 | `TAIL_LOOP` | **Character mode**, `maxCharTailLoop` (default 0.7) | Word mode, `maxTailLoop` (default 0.5) |
 | `REPETITION` | **Blind — see below** | Word n-grams, works |
 | `LOW_ENTROPY`, `TRUNCATED`, `INVALID_JSON`, `EMPTY`, `TOO_SHORT` | Character- or structure-based, unaffected | Same |
+| `SCRIPT_MISMATCH` | **Covered** — `expectScript: ['han', 'kana', 'thai', …]` | Covered, all ten scripts |
 | `LANG_MISMATCH` | Not covered (`id`/`en`/`es` only) | `id`/`en`/`es` only |
 
 Mode is chosen per detector, from the span that detector actually reads — so a
@@ -93,6 +94,38 @@ If you serve mostly non-spaced-script traffic and that cost matters more to you
 than the false-positive risk, lower `maxCharTailLoop` toward 0.5 — and calibrate
 it against your own traffic first, because that is the range healthy structured
 output starts to reach.
+
+## Answering in the wrong script
+
+The one row in that table where non-spaced scripts are not the disadvantaged
+case. `LANG_MISMATCH` reads function words and knows three languages, none of
+them written in these scripts. `SCRIPT_MISMATCH` reads characters, so it covers
+all ten — and it is *more* certain here than on Latin traffic, because Han, Kana,
+Hangul, Thai, Cyrillic, Arabic, Devanagari, Greek and Hebrew each occupy a
+disjoint block of Unicode:
+
+```
+full answer in the wrong script, measured against expectScript: 'latin'
+  zh 1.000    ja 1.000    ko 1.000    ru 1.000    ar 1.000
+  hi 1.000    el 1.000    he 1.000    th 1.000
+```
+
+Against the same measurement, a healthy response scored against the script it is
+written in lands at **0.000–0.028** — the 0.028 being Korean technical prose
+quoting Latin API names, which is why `'latin'` belongs in almost every
+expectation you write.
+
+The rule for building one: pass every script the answer may legitimately
+contain. **Japanese needs `['han', 'kana']`** — Kanji and Kana in one sentence
+is Japanese working correctly, and `'kana'` alone scores 0.314 on healthy
+Japanese prose. Full table in
+[docs/detectors.md](./detectors.md#answering-in-the-wrong-language).
+
+Two things it does not do. It is **not a language detector**: Spanish measured
+against `'latin'` scores 0, and Chinese measured against `'han'` scores 0 whether
+it answered the question or not. And it **does not run mid-stream**, because a
+trailing window measures the language of a window — see the reference for the
+numbers behind that.
 
 ---
 

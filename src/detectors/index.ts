@@ -9,3 +9,5 @@ export { jsonScore, stripFence } from './json.js';
 export type { JsonOptions, JsonResult } from './json.js';
 export { languageMismatchScore, languageProfile, supportedLanguages } from './language.js';
 export type { LanguageOptions } from './language.js';
+export { scriptMismatchScore, scriptProfile, supportedScripts } from './script.js';
+export type { ScriptName, ScriptOptions } from './script.js';

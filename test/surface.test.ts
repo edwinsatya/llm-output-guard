@@ -35,9 +35,12 @@ const ROOT = [
   'languageMismatchScore',
   'languageProfile',
   'repetitionScore',
+  'scriptMismatchScore',
+  'scriptProfile',
   'shortnessScore',
   'stripFence',
   'supportedLanguages',
+  'supportedScripts',
   'tailLoopDetail',
   'tailLoopScore',
   'truncationScore',
@@ -164,6 +167,8 @@ export type {
   JsonOptions,
   JsonResult,
   LanguageOptions,
+  ScriptName,
+  ScriptOptions,
 } from '../src/index.js';
 
 export type {

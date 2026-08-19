@@ -559,6 +559,68 @@ function languageMismatchScore(text, expected, options = {}) {
 }
 var supportedLanguages = Object.keys(PROFILES);
 
+// src/detectors/script.ts
+var SCRIPTS = {
+  latin: /\p{Script=Latin}/u,
+  han: /\p{Script=Han}/u,
+  kana: /[\p{Script=Hiragana}\p{Script=Katakana}]/u,
+  hangul: /\p{Script=Hangul}/u,
+  cyrillic: /\p{Script=Cyrillic}/u,
+  arabic: /\p{Script=Arabic}/u,
+  devanagari: /\p{Script=Devanagari}/u,
+  greek: /\p{Script=Greek}/u,
+  hebrew: /\p{Script=Hebrew}/u,
+  thai: /\p{Script=Thai}/u
+};
+var supportedScripts = Object.keys(SCRIPTS);
+var LETTER_OR_MARK = /[\p{L}\p{M}]/gu;
+var SCRIPT_NEUTRAL = /[\p{sc=Common}\p{sc=Inherited}]/u;
+var FENCED_BLOCK = /```[\s\S]*?```/g;
+var OPEN_FENCE_TO_END = /```[\s\S]*$/;
+var INLINE_CODE = /`[^`\n]*`/g;
+var URL = /\bhttps?:\/\/\S+/gi;
+var stripNonLinguistic = (text) => text.replace(FENCED_BLOCK, " ").replace(OPEN_FENCE_TO_END, " ").replace(INLINE_CODE, " ").replace(URL, " ");
+function scriptProfile(text, options = {}) {
+  const letters = judgeableLetters(text, options);
+  const out = {};
+  if (letters.length === 0) return out;
+  let classified = 0;
+  for (const name of supportedScripts) {
+    const re = SCRIPTS[name];
+    let hits = 0;
+    for (const ch of letters) if (re.test(ch)) hits++;
+    classified += hits;
+    out[name] = hits / letters.length;
+  }
+  out.other = (letters.length - classified) / letters.length;
+  return out;
+}
+function scriptMismatchScore(text, expected, options = {}) {
+  const { minLetters = 12 } = options;
+  const wanted = Array.isArray(expected) ? expected : [expected];
+  const known = wanted.filter((name) => typeof name === "string" && Object.hasOwn(SCRIPTS, name));
+  if (known.length === 0) return 0;
+  const letters = judgeableLetters(text, options);
+  if (letters.length < minLetters) return 0;
+  let matched = 0;
+  for (const ch of letters) {
+    for (const name of known) {
+      if (SCRIPTS[name].test(ch)) {
+        matched++;
+        break;
+      }
+    }
+  }
+  return clamp01(1 - matched / letters.length);
+}
+function judgeableLetters(text, options) {
+  const { ignoreCode = true, maxSample = 8e3 } = options;
+  const source = ignoreCode ? stripNonLinguistic(text.slice(0, maxSample)) : text.slice(0, maxSample);
+  const found = source.match(LETTER_OR_MARK);
+  if (!found) return [];
+  return found.filter((ch) => !SCRIPT_NEUTRAL.test(ch));
+}
+
 // src/internal/json-scope.ts
 function stringValues(value, out = []) {
   if (typeof value === "string") out.push(value);
@@ -592,6 +654,7 @@ var DEFAULTS = {
   expectJson: false,
   allowJsonFence: true,
   maxLangMismatch: 0.6,
+  maxScriptMismatch: 0.5,
   ngram: 3,
   redundancyScope: "document"
 };
@@ -689,6 +752,16 @@ function checkOutput(text, options = {}) {
       result.reason === "missing-keys" ? `JSON is missing required keys: ${result.missingKeys?.join(", ")}.` : result.reason === "schema" ? `JSON does not match the schema: ${result.issues?.join("; ")}.` : "Response is not parseable JSON."
     );
   }
+  if (opts.expectScript) {
+    const wanted = Array.isArray(opts.expectScript) ? opts.expectScript : [opts.expectScript];
+    const s = scriptMismatchScore(text, opts.expectScript);
+    add(
+      "SCRIPT_MISMATCH",
+      s,
+      opts.maxScriptMismatch,
+      `${Math.round(s * 100)}% of letters are not in ${wanted.join(" or ")}.`
+    );
+  }
   if (opts.expectLang) {
     const s = languageMismatchScore(text, opts.expectLang);
     add(
@@ -729,6 +802,30 @@ var DEFERRED_TO_END = {
   expectJson: false,
   expectLang: null,
   finishReason: void 0,
+  /*
+   * SCRIPT_MISMATCH is deferred for a reason none of the others share: it is
+   * the *window* that makes it unsafe, not the partial text.
+   *
+   * Which language a model answered in is a property of the whole response.
+   * Every mid-stream check reads the trailing `window` characters, so what it
+   * would actually measure is the language of the last few paragraphs -- and an
+   * English answer that ends by quoting a Chinese passage is a real thing that
+   * happens. Measured on exactly that shape: 0.114 across the document, 0.206
+   * over the last 1000 characters, and 0.500 over the last 400. The document is
+   * healthy and the window says it is half wrong, so a smaller `window` would
+   * buy earlier detection by manufacturing false positives out of quotations.
+   *
+   * The detector itself is decisive from about a dozen letters, so there is a
+   * real early-abort here for someone who wants it -- it just has to read the
+   * whole buffer rather than a window:
+   *
+   *   const v = checkOutput(guard.text, { expectScript: 'latin' });
+   *
+   * Deliberately left to the caller. The guard cannot run one detector over a
+   * different span than the rest without becoming a per-detector span router,
+   * and this is one line for the callers who need it.
+   */
+  expectScript: null,
   /*
    * LOW_ENTROPY is deferred for a second reason: cost. The LZ77 pass is
    * 0.4ms at 500 characters and 11ms at its 4000-character sample cap, which
@@ -964,12 +1061,13 @@ function thresholdFor(code, opts, mode) {
     case 'LOW_ENTROPY': return opts.maxCompressibility ?? null;
     case 'TRUNCATED': return opts.maxTruncation ?? 0.75;
     case 'INVALID_JSON': return 0;
+    case 'SCRIPT_MISMATCH': return opts.maxScriptMismatch ?? 0.5;
     case 'LANG_MISMATCH': return opts.maxLangMismatch ?? 0.6;
     default: return null;
   }
 }
 
-const ORDER = ['EMPTY', 'TOO_SHORT', 'REPETITION', 'TAIL_LOOP', 'LOW_ENTROPY', 'TRUNCATED', 'INVALID_JSON', 'LANG_MISMATCH'];
+const ORDER = ['EMPTY', 'TOO_SHORT', 'REPETITION', 'TAIL_LOOP', 'LOW_ENTROPY', 'TRUNCATED', 'INVALID_JSON', 'SCRIPT_MISMATCH', 'LANG_MISMATCH'];
 const PRESETS = ['chat', 'strictJson', 'longForm', 'lenient'];
 
 const $ = (id) => document.getElementById(id);

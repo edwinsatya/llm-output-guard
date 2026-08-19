@@ -50,7 +50,8 @@ every detector, running on your own pasted output. No API key, no request.
 | `LOW_ENTROPY` | Character-level collapse, token artifacts | Compression ratio |
 | `TRUNCATED` | Cut off mid-thought | `finish_reason`, unbalanced fences |
 | `INVALID_JSON` | Prose around the payload, wrong types | Parse + key + schema contract |
-| `LANG_MISMATCH` | Answered in the wrong language | Function-word profile (opt-in) |
+| `SCRIPT_MISMATCH` | Answered in the wrong alphabet | Share of letters outside the expected scripts (opt-in) |
+| `LANG_MISMATCH` | Answered in the wrong language, same alphabet | Function-word profile (opt-in) |
 
 Every detector runs even after one fails, so a verdict shows the whole picture
 rather than whichever check happened to be ordered first. Each returns **0–1, not
@@ -141,6 +142,28 @@ See **[docs/detectors.md](docs/detectors.md)** for arrays of repeated records �
 a JSON array of identical rows reads as a loop under the default scope, and
 `redundancyScope: 'jsonValues'` is the fix.
 
+### Answering in the wrong language
+
+```ts
+checkOutput(raw, { ...presets.chat, expectScript: 'latin' });
+```
+
+A model that ignores "answer in English" does not produce broken English, it
+produces fluent Chinese. That is a `200 OK` your retry layer cannot see, and it
+is detectable by counting characters — no word list, no model, decisive from
+about a dozen letters. A response answered entirely in the wrong script scores
+**1.000**; a healthy response measured against its own script scores
+**0.000–0.028**.
+
+Pass every script the answer may legitimately contain — `['han', 'latin']` for
+Chinese, `['han', 'kana', 'latin']` for Japanese. `'latin'` belongs in nearly all
+of them, because a Chinese answer about React still contains `useEffect`. Code
+fences, inline code and URLs are removed before measuring, so a TypeScript block
+never counts as answering in English.
+
+Same script means no signal: Spanish against English scores 0. That is what
+`expectLang` is for, and the two compose under separate codes.
+
 ## The verdict
 
 ```ts
@@ -191,7 +214,8 @@ because only one of those is evidence. Full guide:
 Korean, Cyrillic, Greek, Arabic and Devanagari separate words and are handled like
 English. **Chinese, Japanese and Thai do not**, so `TAIL_LOOP` switches to
 character mode and reads its own threshold. `REPETITION` is blind on those scripts —
-a known, measured gap, with the numbers behind it in
+a known, measured gap. `SCRIPT_MISMATCH` covers all ten scripts and is the one
+detector these are *not* the weak case for. Numbers behind both in
 **[docs/script-coverage.md](docs/script-coverage.md)**.
 
 ## Design notes
@@ -260,7 +284,8 @@ patches.
 - Tool *arguments* are not checked, only the prose beside them. A model that loops inside a JSON argument string is invisible here — your provider validates those against the schema you gave it.
 - `openai`'s `responses.stream()` helper is not wrapped. See the note above; `create({ stream: true })` is.
 - `REPETITION` does not work on Chinese, Japanese or Thai. See above — this is a known, measured gap, not an oversight.
-- Language detection is a function-word heuristic covering `id`/`en`/`es`. Opt-in, and unreliable under 25 words.
+- Language detection is a function-word heuristic covering `id`/`en`/`es`. Opt-in, and unreliable under 25 words. `expectScript` is the stronger check where the languages differ in alphabet, and says nothing where they do not.
+- `SCRIPT_MISMATCH` does not run mid-stream. A mid-stream check reads a trailing window, and the language of a window is not the language of the response — an English answer quoting a Chinese passage measures 0.114 whole and 0.500 over its last 400 characters.
 - Truncation from a missing full stop is weak evidence, scored 0.55 and left below the default thresholds on purpose. Lower `maxTruncation` to ~0.5 to catch it, and expect false positives.
 - A JSON array of repeated identical records reads as a loop under the default scope, and fails from three records up. Set `redundancyScope: 'jsonValues'` — see **Structured output**.
 - Thresholds calibrated on the bundled corpus. Yours will differ — and the word and character thresholds need calibrating **separately**, because they are separate distributions.

@@ -1,0 +1,22 @@
+{
+  "id": "prose-en-quoting-zh",
+  "category": "script-trap",
+  "note": "An English answer that quotes a long Chinese passage from the source it is discussing. Mixed by design and healthy: the quotation is the evidence, not the answer. It is the closest thing to a false positive anyone has built for this detector, and at 0.184 it sits well under the 0.5 default.",
+  "text": "The migration guide is explicit about this, and the passage is worth quoting in full because teams keep reading past it. It says the connection pool is not shared across worker processes, which is the detail that makes the retry budget per-worker rather than global. Here is the original text:\n\n连接池不会在工作进程之间共享。每个工作进程都会维护自己的连接池，因此重试预算也是按工作进程计算的，而不是全局计算的。如果你在部署时增加了工作进程的数量，那么数据库看到的并发连接总数也会随之增加。\n\nSo the practical rule is to multiply your per-worker pool size by the worker count before comparing it against the database limit, and to do that comparison again every time you change the replica count.",
+  "options": {
+    "expectScript": "latin"
+  },
+  "measured": {
+    "chars": 597,
+    "wordTokens": 93,
+    "nonSpacedRatio": 0.184,
+    "tailLoop": {
+      "score": 0,
+      "mode": "word"
+    },
+    "scores": {
+      "REPETITION": 0,
+      "SCRIPT_MISMATCH": 0.184
+    }
+  }
+}

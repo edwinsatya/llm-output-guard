@@ -1,0 +1,26 @@
+{
+  "id": "script-mismatch-zh-for-en",
+  "category": "script-mismatch",
+  "note": "System prompt demanded English; the model answered entirely in Chinese. Fluent, correct, and unusable by the caller that asked for English.",
+  "text": "这个问题的答案取决于你的部署方式。如果你使用容器编排系统，那么健康检查应该配置在编排层面，而不是写在应用内部。这样可以避免在两个地方维护同一套逻辑，也让扩缩容的行为更容易预测。如果你直接跑在虚拟机上，那就只能由应用自己上报状态，这时要注意把探针和真正的业务依赖区分开，否则数据库一慢，整个服务就会被反复重启。",
+  "options": {
+    "expectScript": "latin"
+  },
+  "expect": [
+    "SCRIPT_MISMATCH"
+  ],
+  "measured": {
+    "chars": 154,
+    "wordTokens": 11,
+    "nonSpacedRatio": 1,
+    "tailLoop": {
+      "score": 0,
+      "mode": "char"
+    },
+    "scores": {
+      "REPETITION": 0,
+      "TAIL_LOOP": 0,
+      "SCRIPT_MISMATCH": 1
+    }
+  }
+}

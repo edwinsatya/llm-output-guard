@@ -1,4 +1,5 @@
 import type { StandardSchemaV1 } from './standard-schema.js';
+import type { ScriptName } from './detectors/script.js';
 
 export type ReasonCode =
   | 'EMPTY'
@@ -8,6 +9,7 @@ export type ReasonCode =
   | 'LOW_ENTROPY'
   | 'TRUNCATED'
   | 'INVALID_JSON'
+  | 'SCRIPT_MISMATCH'
   | 'LANG_MISMATCH';
 
 /**
@@ -114,6 +116,35 @@ export interface CheckOptions {
    * synchronous.
    */
   schema?: StandardSchemaV1;
+  /**
+   * Script the response must be written in, or several. Off by default.
+   *
+   * The blunt half of language checking, and the reliable half. `expectLang`
+   * asks *which language is this* from function words and knows three of them;
+   * this asks *is this even the right alphabet*, which needs no word list and
+   * is decisive from about a dozen letters. Measured on this repo's corpus, a
+   * response answered entirely in the wrong script scores 1.000, and a healthy
+   * response measured against its own script scores 0.000-0.028.
+   *
+   * Pass every script an answer may legitimately contain. Japanese is
+   * `['han', 'kana']`; a technical answer in any non-Latin script usually wants
+   * `'latin'` alongside it, because a Chinese answer about React still contains
+   * `useEffect`. Code fences, inline code and URLs are excluded before
+   * measuring, so a code block does not count as an answer in English.
+   *
+   * Same script means no signal: Spanish against English scores 0. That is
+   * `expectLang`'s job, and the two compose -- they report separate codes and
+   * separate scores, because they are separate distributions.
+   */
+  expectScript?: ScriptName | readonly ScriptName[] | null;
+  /**
+   * Script-mismatch threshold. Default 0.5 -- a majority of the letters are in
+   * an alphabet you did not ask for.
+   *
+   * Not interchangeable with `maxLangMismatch`, which reads a relative share of
+   * function words. This one is a plain share of letters, so 0.5 means half.
+   */
+  maxScriptMismatch?: number;
   /** Expected language code ('id' | 'en' | 'es'). Off by default. */
   expectLang?: string | null;
   /** Language-mismatch threshold. Default 0.6. */

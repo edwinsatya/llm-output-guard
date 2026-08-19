@@ -18,6 +18,7 @@ const CODES: ReasonCode[] = [
   'LOW_ENTROPY',
   'TRUNCATED',
   'INVALID_JSON',
+  'SCRIPT_MISMATCH',
   'LANG_MISMATCH',
 ];
 
@@ -36,6 +37,7 @@ const OPTION_FOR: Partial<Record<ReasonCode, string>> = {
   TAIL_LOOP: 'maxTailLoop',
   LOW_ENTROPY: 'maxCompressibility',
   TRUNCATED: 'maxTruncation',
+  SCRIPT_MISMATCH: 'maxScriptMismatch',
   LANG_MISMATCH: 'maxLangMismatch',
 };
 

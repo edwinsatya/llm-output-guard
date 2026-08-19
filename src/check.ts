@@ -5,6 +5,7 @@ import { emptinessScore, shortnessScore } from './detectors/emptiness.js';
 import { truncationScore } from './detectors/truncation.js';
 import { jsonScore } from './detectors/json.js';
 import { languageMismatchScore } from './detectors/language.js';
+import { scriptMismatchScore } from './detectors/script.js';
 import { excerpt } from './internal/tokenize.js';
 import { redundancySpans } from './internal/json-scope.js';
 
@@ -12,7 +13,7 @@ const DEFAULTS: Required<
   Pick<CheckOptions,
     'minLength' | 'maxRepetition' | 'maxTailLoop' | 'maxCompressibility' |
     'maxTruncation' | 'expectJson' | 'allowJsonFence' | 'maxLangMismatch' | 'ngram' |
-    'maxCharTailLoop' | 'nonSpacedCutoff' | 'redundancyScope'>
+    'maxCharTailLoop' | 'nonSpacedCutoff' | 'redundancyScope' | 'maxScriptMismatch'>
 > = {
   minLength: 1,
   maxRepetition: 0.35,
@@ -24,6 +25,7 @@ const DEFAULTS: Required<
   expectJson: false,
   allowJsonFence: true,
   maxLangMismatch: 0.6,
+  maxScriptMismatch: 0.5,
   ngram: 3,
   redundancyScope: 'document',
 };
@@ -173,6 +175,21 @@ export function checkOutput(
         : result.reason === 'schema'
           ? `JSON does not match the schema: ${result.issues?.join('; ')}.`
           : 'Response is not parseable JSON.');
+  }
+
+  /*
+   * Script before language, because where both fire the script answer is the
+   * one worth reading: it measured characters, and the other guessed from
+   * twenty function words. They keep separate codes rather than sharing
+   * `LANG_MISMATCH` for the same reason `TAIL_LOOP` reports its mode -- a share
+   * of letters and a relative share of function-word hits are different
+   * distributions, and one histogram holding both describes neither.
+   */
+  if (opts.expectScript) {
+    const wanted = Array.isArray(opts.expectScript) ? opts.expectScript : [opts.expectScript];
+    const s = scriptMismatchScore(text, opts.expectScript);
+    add('SCRIPT_MISMATCH', s, opts.maxScriptMismatch,
+      `${Math.round(s * 100)}% of letters are not in ${wanted.join(' or ')}.`);
   }
 
   if (opts.expectLang) {

@@ -24,6 +24,31 @@ const DEFERRED_TO_END: CheckOptions = {
   finishReason: undefined,
 
   /*
+   * SCRIPT_MISMATCH is deferred for a reason none of the others share: it is
+   * the *window* that makes it unsafe, not the partial text.
+   *
+   * Which language a model answered in is a property of the whole response.
+   * Every mid-stream check reads the trailing `window` characters, so what it
+   * would actually measure is the language of the last few paragraphs -- and an
+   * English answer that ends by quoting a Chinese passage is a real thing that
+   * happens. Measured on exactly that shape: 0.114 across the document, 0.206
+   * over the last 1000 characters, and 0.500 over the last 400. The document is
+   * healthy and the window says it is half wrong, so a smaller `window` would
+   * buy earlier detection by manufacturing false positives out of quotations.
+   *
+   * The detector itself is decisive from about a dozen letters, so there is a
+   * real early-abort here for someone who wants it -- it just has to read the
+   * whole buffer rather than a window:
+   *
+   *   const v = checkOutput(guard.text, { expectScript: 'latin' });
+   *
+   * Deliberately left to the caller. The guard cannot run one detector over a
+   * different span than the rest without becoming a per-detector span router,
+   * and this is one line for the callers who need it.
+   */
+  expectScript: null,
+
+  /*
    * LOW_ENTROPY is deferred for a second reason: cost. The LZ77 pass is
    * 0.4ms at 500 characters and 11ms at its 4000-character sample cap, which
    * is 100x the other two detectors combined -- affordable once per response,
