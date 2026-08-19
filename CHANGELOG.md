@@ -1,5 +1,35 @@
 # llm-output-guard
 
+## 1.4.1
+
+### Patch Changes
+
+- Cache the downloads badge for a day, so the npm listing stops showing
+  `rate limited by upstream service` where a number belongs.
+
+  Documentation only. `dist/` is byte-identical to 1.4.0 — no behaviour changed,
+  no threshold moved, no export added.
+
+  The badge was rendering that text on both the repo page and the npm listing
+  while the endpoint itself was healthy, which took some measuring to explain.
+  GitHub proxies README images through camo, camo honours the image's own
+  `cache-control`, and shields.io returns its error badge with `max-age=7200`. So
+  one moment when shields was rate limited against `api.npmjs.org` got pinned to
+  the page for two hours, long after the underlying service recovered.
+
+  The default TTL made that likely rather than unlucky: at 7200s camo refetched
+  **twelve times a day**, i.e. twelve daily chances to catch shields mid-failure
+  and cache the result. `cacheSeconds=86400` cuts that to one.
+
+  Nothing is lost by slowing it down. `api.npmjs.org` recomputes download counts
+  once a day, so the two-hour refresh was churning against a number that had not
+  moved. Changing the URL also drops camo's stale entry, which is what unstuck the
+  repo page immediately.
+
+  Published rather than left in the repo because a package page renders the README
+  baked into its tarball, so the npm listing can only pick this up through a
+  release — the same reason 1.0.1 exists.
+
 ## 1.4.0
 
 ### Minor Changes
