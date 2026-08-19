@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 354 140" width="354" height="140" role="img" aria-labelledby="t d">
+  <title id="t">llm-output-guard</title>
+  <desc id="d">Varied output collapsing into identical repeats, stopped at a guard.</desc>
+
+  <!--
+    Solid blocks rather than drawn lines, and the reason is legibility at the
+    size this is actually shown.
+
+    An earlier version drew the same idea as a 7px stroked waveform. It was
+    fine at 560px and turned to mush at the 220px the README displays, which is
+    the only size that matters. A version with the waveform drawn inside a lock
+    body was worse again: the lock stayed legible and the thing it guards did
+    not, which is the wrong half to keep.
+
+    No background rect and no prefers-color-scheme block. The mark has to render
+    on GitHub (white and #0d1117), on npm (white), and on this repo's own
+    playground (#f4f7f9 and #0e1319). An SVG referenced by an img tag cannot be
+    styled by the host page, and npm strips style elements from README SVGs, so
+    a theme swap would work in some of those places and silently fail in the
+    rest. Every colour here clears 3:1 against both extremes on its own.
+
+    That is also why these are not the palette in build-playground.mjs, where
+    the light accent measures 2.68 on a dark ground and the dark fail colour
+    measures 2.80 on white. Each is correct in a page that knows its own theme.
+    This file never does.
+
+    Measured, lightest first: 3.06, 3.28, 3.71, 4.09, 4.58 for the teals, 4.36
+    for the red, 4.56 for the slate, each against the worse of the two grounds.
+    Nothing carries an opacity. The blocks do not overlap, so it bought no
+    blending, and at 0.9 the two lightest teals composited to 2.55 and 2.88 on
+    white, i.e. under the bar, for no visible gain. If a lighter tint is ever
+    wanted here, check it at full opacity first.
+  -->
+
+  <!--
+    Healthy output: every block a different height, and no two hues the same.
+    The variation is the signal. Nothing here is decorative.
+  -->
+  <g>
+    <rect x="12"  y="22" width="26" height="96"  rx="9" fill="#1f88a6"/>
+    <rect x="42"  y="44" width="26" height="52"  rx="9" fill="#2f9ab4"/>
+    <rect x="72"  y="11" width="26" height="118" rx="9" fill="#1a7fa0"/>
+    <rect x="102" y="50" width="26" height="40"  rx="9" fill="#35a0b8"/>
+    <rect x="132" y="31" width="26" height="78"  rx="9" fill="#2490ad"/>
+
+    <!--
+      Degenerate output: same height, same hue, same spacing, four times over.
+      Deliberately drawn with no variation at all, because a loop that varied
+      even slightly would be a different failure than the one this detects.
+    -->
+    <rect x="162" y="38" width="26" height="64" rx="9" fill="#c2513f"/>
+    <rect x="192" y="38" width="26" height="64" rx="9" fill="#c2513f"/>
+    <rect x="222" y="38" width="26" height="64" rx="9" fill="#c2513f"/>
+    <rect x="252" y="38" width="26" height="64" rx="9" fill="#c2513f"/>
+  </g>
+
+  <!--
+    The guard, at full opacity and in the only neutral in the mark, so it reads
+    as the thing acting on the output rather than as more output. Nothing is
+    drawn to its right.
+  -->
+  <path d="M 307 51 L 307 39 A 13 13 0 0 1 333 39 L 333 51"
+        fill="none" stroke="#6b7785" stroke-width="11" stroke-linecap="round"/>
+  <rect x="294" y="47" width="52" height="46" rx="11" fill="#6b7785"/>
+</svg>

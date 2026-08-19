@@ -1,9 +1,15 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/edwinsatya/llm-output-guard/main/assets/logo.svg"
+       width="240" alt="llm-output-guard" />
+</p>
+
 # llm-output-guard
 
 **Detect LLM responses that failed while returning `200 OK`.**
 
 [![npm](https://img.shields.io/npm/v/llm-output-guard?color=0b7285)](https://www.npmjs.com/package/llm-output-guard)
-[![minzipped](https://img.shields.io/bundlephobia/minzip/llm-output-guard?color=0b7285&label=min%2Bgzip)](https://bundlephobia.com/package/llm-output-guard)
+[![downloads](https://img.shields.io/npm/dm/llm-output-guard?color=0b7285)](https://www.npmjs.com/package/llm-output-guard)
+[![minzipped](https://img.shields.io/bundlejs/size/llm-output-guard?color=0b7285&label=min%2Bgzip)](https://bundlejs.com/?q=llm-output-guard)
 [![dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](https://github.com/edwinsatya/llm-output-guard/blob/main/package.json)
 [![CI](https://github.com/edwinsatya/llm-output-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/edwinsatya/llm-output-guard/actions/workflows/ci.yml)
 [![license](https://img.shields.io/npm/l/llm-output-guard?color=0b7285)](./LICENSE)
@@ -12,7 +18,7 @@ Your retry layer watches for `429`, `5xx` and timeouts. It cannot see a model th
 looped until `max_tokens`, returned `{}`, stopped mid-sentence, or answered in the
 wrong language — because all of those arrive as a **successful request**.
 
-This produces the signal that layer is missing. Zero dependencies, ~3 KB gzipped,
+This produces the signal that layer is missing. Zero dependencies, ~5 KB gzipped,
 synchronous, no network.
 
 ```bash
