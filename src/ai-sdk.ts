@@ -14,6 +14,7 @@ import type { AdapterGuardOptions, DegenerateAction } from './internal/adapter-o
 import { checkOutput, DegenerateOutputError } from './check.js';
 import { createStreamGuard } from './stream.js';
 import { checkPreamble } from './internal/tool-calls.js';
+import { checkArguments, mergeVerdicts } from './internal/tool-arguments.js';
 
 /** `'stop' | 'length' | ...` in older specs, `{ unified, raw }` in v4. */
 type FinishReasonLike = string | { unified?: string; raw?: string } | null | undefined;
@@ -26,6 +27,14 @@ interface StreamPart {
   delta?: string;
   /** Present on the `finish` part. */
   finishReason?: FinishReasonLike;
+  /**
+   * The arguments of a `tool-call` part. Spelled `input` in the current spec
+   * and `args` in older `ai` majors, and sent either as an object or as the
+   * raw JSON string depending on version, so both names are read and
+   * `argumentsToText` normalises the shapes.
+   */
+  input?: unknown;
+  args?: unknown;
 }
 
 /**
@@ -82,7 +91,7 @@ export interface OutputGuardOptions extends StreamGuardOptions, AdapterGuardOpti
  * than letting the model run to `max_tokens` on your budget.
  */
 export function outputGuard(options: OutputGuardOptions = {}) {
-  const { onDegenerate = 'throw', onVerdict, ...guardOptions } = options;
+  const { onDegenerate = 'throw', onVerdict, checkToolArguments = false, ...guardOptions } = options;
 
   const act = (verdict: Verdict, streaming: boolean): void => {
     onVerdict?.(verdict, { streaming });
@@ -131,7 +140,22 @@ export function outputGuard(options: OutputGuardOptions = {}) {
        * the wrong question rather than the detector being wrong.
        */
       if (content.some(isToolPart)) {
-        const verdict = checkPreamble(text, guardOptions);
+        const preamble = checkPreamble(text, guardOptions);
+        /*
+         * Only `tool-call` parts, not every `tool-` prefixed one: the
+         * `tool-input-start` / `-delta` / `-end` parts are streaming fragments
+         * and carry pieces of the same arguments, so counting them here would
+         * measure the same value several times over in partial form.
+         */
+        const args = checkToolArguments
+          ? checkArguments(
+              content
+                .filter((part) => part.type === 'tool-call')
+                .map((part) => part.input ?? part.args),
+              guardOptions,
+            )
+          : null;
+        const verdict = mergeVerdicts(preamble, args);
         if (verdict) act(verdict, false);
         return result;
       }

@@ -24,6 +24,12 @@ interface ContentBlock {
   type?: string;
   /** Present on `text` blocks. */
   text?: string;
+  /**
+   * Present on `tool_use` blocks, already parsed into an object rather than
+   * left as the JSON string OpenAI sends. `argumentsToText` serialises it back
+   * so both providers reach the detectors by the same path.
+   */
+  input?: unknown;
 }
 
 /** A finished `messages.create` result. */
@@ -108,6 +114,14 @@ const MESSAGES: Surface = {
   hasToolCalls: (value) => ((value as MessageLike).content ?? []).some(isToolBlock),
 
   finishReason: (value) => normaliseStop((value as MessageLike).stop_reason),
+
+  /*
+   * `isToolBlock` again, so this covers exactly the blocks that put the guard
+   * into preamble mode -- including the server tools, whose inputs are
+   * model-generated in the same way and can loop in the same way.
+   */
+  toolArguments: (value) =>
+    ((value as MessageLike).content ?? []).filter(isToolBlock).map((block) => block.input),
 
   chunk: (value) => {
     const event = value as MessageEventLike;

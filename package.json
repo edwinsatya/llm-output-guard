@@ -81,7 +81,8 @@
     "seed": "node scripts/seed-fixtures.mjs",
     "provoke": "npm run build --silent && node scripts/generate-fixtures.mjs",
     "playground": "npm run build --silent && node scripts/build-playground.mjs",
-    "prepublishOnly": "npm run typecheck && npm run test && npm run build && npm run playground"
+    "prepublishOnly": "npm run typecheck && npm run test && npm run build && npm run playground",
+    "bench": "npm run build --silent && node scripts/bench.mjs"
   },
   "peerDependencies": {
     "@anthropic-ai/sdk": ">=0.60.0 <1.0.0",

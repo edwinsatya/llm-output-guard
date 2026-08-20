@@ -77,7 +77,13 @@ Adapters for the **OpenAI SDK** (both `chat.completions` and `responses`),
 protocol: Groq, Together, OpenRouter, Fireworks, vLLM, Ollama.
 
 On a stream this **cancels the HTTP request** the moment a loop is detectable, so
-you stop paying for the rest of it. See **[docs/adapters.md](docs/adapters.md)**
+you stop paying for the rest of it.
+
+If you run agents, add `checkToolArguments: true`. A tool-calling turn is judged
+by its preamble, which leaves the actual answer — the arguments — unmeasured.
+Your provider validates those against your schema, and a schema covers *types*:
+`{ "query": "site reliability site reliability …" }` is a valid `string`, and it
+still reaches your tool as a garbage query. See **[docs/adapters.md](docs/adapters.md)**
 and **[docs/streaming.md](docs/streaming.md)**.
 
 ## The hard part is not catching loops
@@ -232,6 +238,41 @@ detector these are *not* the weak case for. Numbers behind both in
 - **Scores, not booleans.** Detectors report 0–1 and leave the threshold decision to you.
 - **Abstains rather than guesses.** Samples too short to judge score 0.
 
+### What it costs
+
+"Safe on a hot path" is a latency claim, so here is the latency. `npm run bench`
+reproduces it; `-- --json` gives machine-readable output.
+
+| `checkOutput(presets.chat)` | p50 | p99 |
+|---|---|---|
+| 500 B | 0.383 ms | 0.480 ms |
+| 2 KB | 0.457 ms | 0.553 ms |
+| 8 KB | 0.677 ms | 0.858 ms |
+| 32 KB | 1.014 ms | 1.235 ms |
+
+**One detector is 80% of that.** At 2 KB, `LOW_ENTROPY` costs 0.376 ms and the
+other six together cost 0.081 ms — the LZ77 pass is the whole bill:
+
+| detector, 2 KB | p50 |
+|---|---|
+| `LOW_ENTROPY` | 0.376 ms |
+| `SCRIPT_MISMATCH` | 0.066 ms |
+| `REPETITION` | 0.048 ms |
+| `TAIL_LOOP` | 0.026 ms |
+| `LANG_MISMATCH` | 0.019 ms |
+| `INVALID_JSON` | 0.006 ms |
+| `TRUNCATED` | 0.002 ms |
+
+So if you ever need this cheaper, there is exactly one lever: `maxCompressibility: null`.
+That is why `presets.strictJson` measures **0.082 ms** against `chat`'s 0.457 ms —
+it disables that detector for an unrelated reason (JSON is legitimately
+repetitive) and gets 5× the speed as a side effect. It is also why the streaming
+guard defers `LOW_ENTROPY` to the end rather than running it every few hundred
+characters.
+
+Measured on Node 24, darwin/arm64, 500 runs after 200 warmup, on varied prose.
+Your absolute numbers will differ; the ratios are the durable part.
+
 ## Stability
 
 What semver means for this package specifically. These rules bind from **1.0.0**
@@ -287,7 +328,7 @@ patches.
 ## Limitations
 
 - Not a hallucination detector. It measures *shape*, never truth.
-- Tool *arguments* are not checked, only the prose beside them. A model that loops inside a JSON argument string is invisible here — your provider validates those against the schema you gave it.
+- Tool *arguments* are checked only when you ask — `checkToolArguments: true` on any adapter, non-streaming responses only. Off by default, and unmeasured before 1.5.
 - `openai`'s `responses.stream()` helper is not wrapped. See the note above; `create({ stream: true })` is.
 - `REPETITION` does not work on Chinese, Japanese or Thai. See above — this is a known, measured gap, not an oversight.
 - Language detection is a function-word heuristic covering `id`/`en`/`es`. Opt-in, and unreliable under 25 words. `expectScript` is the stronger check where the languages differ in alphabet, and says nothing where they do not.

@@ -18,9 +18,18 @@ export type { DegenerateAction };
 /** The parts of an assistant message this reads. */
 interface MessageLike {
   content?: string | null;
-  tool_calls?: unknown[] | null;
+  tool_calls?: ToolCallLike[] | null;
   /** The pre-`tool_calls` spelling. Still returned by older gateways. */
-  function_call?: unknown;
+  function_call?: { arguments?: unknown } | null;
+}
+
+/**
+ * One entry of `tool_calls`. `arguments` is a JSON **string**, not an object:
+ * the model generated it token by token, which is exactly why it is worth
+ * measuring.
+ */
+interface ToolCallLike {
+  function?: { arguments?: unknown } | null;
 }
 
 /** One choice of a non-streaming `chat.completions.create`. */
@@ -48,6 +57,12 @@ interface OutputItem {
   type?: string;
   /** Present on `message` items. */
   content?: Array<{ type?: string; text?: string }> | null;
+  /**
+   * Present on tool-call items, as a JSON string. Every tool kind in this API
+   * spells it `arguments`, so reading the field rather than switching on
+   * `type` keeps this working for tool types that do not exist yet.
+   */
+  arguments?: unknown;
 }
 
 /** A finished `responses.create` result. */
@@ -118,6 +133,13 @@ const CHAT_COMPLETIONS: Surface = {
       finishReason: finishReasonOf(choices),
     };
   },
+
+  toolArguments: (value) =>
+    ((value as CompletionLike).choices ?? []).flatMap((choice) => [
+      ...(choice.message?.tool_calls ?? []).map((call) => call?.function?.arguments),
+      // The legacy spelling carries one call rather than a list.
+      ...(choice.message?.function_call ? [choice.message.function_call.arguments] : []),
+    ]),
 };
 
 /** Tool calls on a chat message or a streamed delta, either spelling. */
@@ -146,6 +168,15 @@ const RESPONSES: Surface = {
   },
 
   hasToolCalls: (value) => ((value as ResponseLike).output ?? []).some(isToolCallItem),
+
+  /*
+   * Filtered by `isToolCallItem` rather than by looking for `arguments`, so
+   * this stays consistent with what `hasToolCalls` counted as a tool call. An
+   * item that is a tool call but carries no arguments contributes `undefined`,
+   * which `argumentsToText` turns into the empty string and the check skips.
+   */
+  toolArguments: (value) =>
+    ((value as ResponseLike).output ?? []).filter(isToolCallItem).map((item) => item.arguments),
 
   /*
    * `incomplete_details.reason` is this API's `finish_reason`, and its

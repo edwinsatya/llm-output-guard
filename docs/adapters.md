@@ -231,3 +231,57 @@ them would describe your agent's tool use rather than any degeneration.
 ---
 
 [← Back to the README](../README.md) · [Try the playground](https://edwinsatya.github.io/llm-output-guard/)
+
+## Tool-call arguments
+
+A tool-calling turn is judged by its preamble — the text beside the call — because
+that text is not the answer. Which leaves the answer itself, the arguments,
+unmeasured. Before 1.5 nothing here looked at them at all.
+
+```ts
+const client = withOutputGuard(new OpenAI(), {
+  ...presets.chat,
+  checkToolArguments: true,
+});
+```
+
+Your provider already validates arguments against the schema you declared. That
+covers **types**, not content — and a model that loops does not produce the wrong
+type, it produces a valid string with nothing in it:
+
+```json
+{ "query": "site reliability engineering site reliability engineering …", "limit": 10 }
+```
+
+Schema-valid. Passes the provider. Reaches your tool as a garbage search, or,
+if the tool writes, persists the loop.
+
+**What is measured.** Redundancy only, per string value — `REPETITION` and
+`TAIL_LOOP`, under the same thresholds your guard already uses. The reason codes
+are unchanged so existing handling keeps working; the `message` says the loop was
+found in an argument rather than in the prose.
+
+**What is not, and why.** `LOW_ENTROPY` is off because JSON is legitimately
+repetitive at the character level, the same reason `presets.strictJson` turns it
+off. `TRUNCATED`, `TOO_SHORT` and `INVALID_JSON` are off because the provider
+already guarantees the arguments parse and match your schema — they would be
+answering a question that has been answered. `SCRIPT_MISMATCH` and
+`LANG_MISMATCH` are off because an argument is not prose addressed to a user: a
+search query in another language is ordinary, not degenerate.
+
+Values are measured **individually**, never as a serialised document. Two calls
+against the same schema are legitimately near-identical documents, and an array
+of repeated records inside one argument is the shape that was asked for — the
+same rule `redundancyScope: 'jsonValues'` follows, for the same reason.
+
+**Nothing is measured when there is nothing to measure.** A tool that takes no
+parameters is called with `{}`, and arguments carrying no strings at all — 
+`{"lat":-6.2,"zoom":11}` — have no prose to judge. Both are skipped rather than
+scored, so a no-argument tool does not fail on `EMPTY`.
+
+**Non-streaming responses only.** Arguments arrive as JSON fragments that do not
+parse until the call is complete, so there is nothing meaningful to measure
+mid-stream.
+
+Off by default. Switching it on can only make a response fail that previously
+passed, so it is opt-in like every other behaviour change in this package.

@@ -26,6 +26,7 @@ import type { AdapterGuardOptions } from './adapter-options.js';
 import { checkOutput, DegenerateOutputError } from '../check.js';
 import { createStreamGuard } from '../stream.js';
 import { checkPreamble } from './tool-calls.js';
+import { checkArguments, mergeVerdicts } from './tool-arguments.js';
 
 /**
  * An SDK stream, reduced to what this needs.
@@ -54,6 +55,15 @@ export interface Surface {
   finishReason(value: object): string | undefined;
   /** What one streamed chunk contributes. */
   chunk(value: object): { delta: string; toolCall: boolean; finishReason?: string };
+  /**
+   * The arguments of every tool call in a finished response, one entry per
+   * call, in whatever shape the provider sends: OpenAI a JSON string, Anthropic
+   * an already-parsed object.
+   *
+   * Optional, so a surface that cannot reach them opts out by omission rather
+   * than by returning a misleading empty array.
+   */
+  toolArguments?(value: object): unknown[];
 }
 
 export interface GuardedPath {
@@ -81,7 +91,7 @@ export function guardClient<T extends object>(
   paths: readonly GuardedPath[],
   options: ProxyGuardOptions = {},
 ): T {
-  const { onDegenerate = 'throw', onVerdict, ...guardOptions } = options;
+  const { onDegenerate = 'throw', onVerdict, checkToolArguments = false, ...guardOptions } = options;
 
   const act = (verdict: Verdict, streaming: boolean): void => {
     onVerdict?.(verdict, { streaming });
@@ -98,7 +108,18 @@ export function guardClient<T extends object>(
      * question rather than the detector being wrong.
      */
     if (surface.hasToolCalls(completion)) {
-      const verdict = checkPreamble(surface.text(completion), guardOptions);
+      const preamble = checkPreamble(surface.text(completion), guardOptions);
+      /*
+       * Off by default, and read through the surface rather than here, because
+       * where the arguments live is the one part of this that is provider
+       * shaped. A surface with no `toolArguments` simply keeps the old
+       * behaviour.
+       */
+      const args =
+        checkToolArguments && surface.toolArguments
+          ? checkArguments(surface.toolArguments(completion), guardOptions)
+          : null;
+      const verdict = mergeVerdicts(preamble, args);
       if (verdict) act(verdict, false);
       return completion;
     }

@@ -60,4 +60,24 @@ export interface AdapterGuardOptions {
    * neither.
    */
   onVerdict?: (verdict: Verdict, context: { streaming: boolean }) => void;
+  /**
+   * Also measure the arguments the model passed to a tool. Default `false`.
+   *
+   * A tool-calling turn is judged by its preamble, because the text beside a
+   * tool call is not the answer -- and that leaves the answer itself
+   * unmeasured. Your provider validates arguments against the schema you gave
+   * it, which covers types and not content: `{ "query": "site reliability site
+   * reliability site reliability ..." }` is a schema-valid string, and it is
+   * still a garbage query.
+   *
+   * Switching this on measures each string value of each call's arguments for
+   * redundancy, and folds the result into the same verdict the preamble
+   * produces. Reason codes are unchanged, so existing handling works; the
+   * `message` says the loop was found in an argument.
+   *
+   * **Non-streaming responses only.** Arguments arrive as JSON fragments that
+   * do not parse until the call is complete, so there is nothing meaningful to
+   * measure mid-stream.
+   */
+  checkToolArguments?: boolean;
 }
