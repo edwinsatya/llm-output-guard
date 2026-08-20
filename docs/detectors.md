@@ -37,6 +37,58 @@ expectation positionally. `supportedLanguages` and `supportedScripts` are values
 not functions — the arrays `['id', 'en', 'es']` and `['latin', 'han', 'kana',
 'hangul', 'cyrillic', 'arabic', 'devanagari', 'greek', 'hebrew', 'thai']`.
 
+#### Structured output
+
+```ts
+const verdict = checkOutput(raw, {
+  ...presets.strictJson,
+  requiredKeys: ['score', 'notes', 'followUp'],
+});
+
+if (verdict.ok) use(verdict.json); // already parsed, fence stripped
+```
+
+`requiredKeys` only asks whether a name is present. A model returning
+`{ "score": "very good" }` where you wanted a number satisfies it and still
+breaks everything downstream that does arithmetic. Pass a **schema** to check the
+shape rather than the spelling:
+
+```ts
+import { z } from 'zod';
+
+const Review = z.object({
+  score: z.number().min(0).max(10),
+  notes: z.string(),
+  followUp: z.array(z.string()),
+});
+
+const verdict = checkOutput(raw, { ...presets.strictJson, schema: Review });
+
+if (verdict.ok) use(verdict.json); // parsed, validated, defaults applied
+```
+
+Any [Standard Schema](https://standardschema.dev) validator works — **Zod 4,
+Valibot, ArkType**, or your own. The spec is types-only, so this costs an
+interface and **no dependency**: your validator is one you already have, and
+`llm-output-guard` still installs with nothing behind it.
+
+On success `verdict.json` is the schema's *output*, so defaults, coercions and
+transforms are applied and the value matches the type you declared. On failure
+you get `INVALID_JSON` with the failing path in the message —
+`score: Expected number, received string`. It is the same reason code as a
+missing key or an unparseable payload because it wants the same handling: retry,
+or fall through to another provider.
+
+The two compose, and keys are checked first, so a missing key is still reported
+as a missing key rather than as whatever the schema calls it.
+
+> **The schema must validate synchronously.** `checkOutput` is synchronous by
+> design — that is what makes it safe on a hot path — so a schema carrying an
+> async refinement throws a `TypeError` telling you so, rather than silently
+> passing. Everything Zod, Valibot and ArkType produce otherwise is synchronous.
+> This is the one thing in the package that throws about your configuration; it
+> still never throws about a response.
+
 #### Answering in the wrong language
 
 Two detectors, and they are asking different questions.
