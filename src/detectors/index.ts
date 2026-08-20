@@ -11,3 +11,5 @@ export { languageMismatchScore, languageProfile, supportedLanguages } from './la
 export type { LanguageOptions } from './language.js';
 export { scriptMismatchScore, scriptProfile, supportedScripts } from './script.js';
 export type { ScriptName, ScriptOptions } from './script.js';
+export { promptEchoScore, promptEchoDetail } from './prompt-echo.js';
+export type { PromptEchoOptions, PromptEchoResult } from './prompt-echo.js';

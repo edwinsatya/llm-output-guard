@@ -10,7 +10,8 @@ export type ReasonCode =
   | 'TRUNCATED'
   | 'INVALID_JSON'
   | 'SCRIPT_MISMATCH'
-  | 'LANG_MISMATCH';
+  | 'LANG_MISMATCH'
+  | 'PROMPT_ECHO';
 
 /**
  * Which tokenizer produced a score.
@@ -145,6 +146,31 @@ export interface CheckOptions {
    * function words. This one is a plain share of letters, so 0.5 means half.
    */
   maxScriptMismatch?: number;
+  /**
+   * The prompt you sent, so the output can be checked for copying it back.
+   * Off by default: with no prompt the detector abstains.
+   *
+   * Pass everything the model saw, system and user together. A model that
+   * loses track of the turn boundary echoes whichever part it landed on, and a
+   * check that only knows the user message misses a leaked system prompt,
+   * which is the more common and the more embarrassing of the two.
+   *
+   * **Do not enable this on a rewrite, translate, summarise or extract
+   * endpoint.** Copying from the input is the job on those, so a correct
+   * answer scores high and the detector is measuring the task rather than a
+   * failure. There is no signal that separates them.
+   */
+  prompt?: string | null;
+  /**
+   * Prompt-echo threshold. Default 0.6.
+   *
+   * Measured on this repo's cases: a full echo of the prompt scores 1.000 and
+   * an echoed system prompt 0.953, while every output that actually contains
+   * an answer stays at or below 0.463 even when it leaks the question first.
+   * The default sits between those. Lower it toward 0.4 to catch a response
+   * that answers *and* leaks, and expect to see ordinary preamble with it.
+   */
+  maxPromptEcho?: number;
   /** Expected language code ('id' | 'en' | 'es'). Off by default. */
   expectLang?: string | null;
   /** Language-mismatch threshold. Default 0.6. */

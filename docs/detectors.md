@@ -15,6 +15,7 @@ Every detector, the signal it reads, and the function that exposes it on its own
 | `INVALID_JSON` | Prose around the payload, missing keys, wrong types | Parse + key contract + optional schema | `jsonScore`, `stripFence` |
 | `SCRIPT_MISMATCH` | Answered in the wrong alphabet | Share of letters outside the expected scripts (opt-in) | `scriptMismatchScore`, `scriptProfile`, `supportedScripts` |
 | `LANG_MISMATCH` | Answered in the wrong language, same alphabet | Function-word profile (coarse, opt-in) | `languageMismatchScore`, `languageProfile`, `supportedLanguages` |
+| `PROMPT_ECHO` | Returned your prompt instead of an answer | Share of output runs copied verbatim from the prompt (opt-in) | `promptEchoScore`, `promptEchoDetail` |
 
 Every detector is exported on its own if you only want one, and every name in
 that last column is covered by semver — see **Stability**.
@@ -95,6 +96,57 @@ tokens — read the buffer yourself:
 ```ts
 const verdict = checkOutput(guard.text, { expectScript: 'latin' });
 ```
+
+#### Returning the prompt instead of an answer
+
+```ts
+checkOutput(raw, { ...presets.chat, prompt });
+```
+
+A model that replays your system prompt, your question, or the few-shot example
+you included to demonstrate the format produces output that is non-empty, long
+enough, not repetitive, properly terminated, in the right script and the right
+language. **Every other detector here reads it as healthy**, correctly, because
+by every measure they take it is. It happens most with quantised and self-hosted
+models, and with a chat template that has drifted from the one the weights were
+trained on.
+
+Pass the whole prompt, system and user together. A model that loses the turn
+boundary echoes whichever part it landed on, and a check that only knows the user
+message misses a leaked system prompt.
+
+**Runs, not similarity.** The question is not how similar two texts are, it is
+how much of the output the model actually wrote. A good answer to a detailed
+question reuses the question's vocabulary heavily and its *sequences* not at all,
+so matching on runs of five words separates them cleanly:
+
+```
+full echo of the prompt                     1.000
+echoed system prompt                        0.953
+the question repeated, then an answer       0.463
+the whole system prompt, then an answer     0.446
+half the system prompt, then an answer      0.354
+an answer that shares the question's words  0.060
+a clean answer                              0.000
+```
+
+`maxPromptEcho` defaults to **0.6**: above everything that still contains an
+answer, below every true echo. The score is a *share*, so a response that leaks
+and then answers scores in the middle by design, and a longer answer dilutes the
+same leak further. Lower it toward 0.4 to catch those too, and expect ordinary
+preamble to come with them.
+
+**It does not run mid-stream**, and the reason is sharper than for
+`SCRIPT_MISMATCH`: the score is a share of the whole output, so a trailing window
+measures the share of that window. The same leak-then-answer response reads 0.707
+over its opening 400 characters and 0.446 across the document.
+
+> **The false positive it cannot avoid.** Rewriting, translating, summarising,
+> fixing grammar, extracting fields — copying from the input *is* the job, and a
+> correct answer scores high. Nothing in the text separates that from a
+> degenerate echo; the difference is in what you asked for. This is why the
+> detector is opt-in, absent from every preset, and requires you to pass the
+> prompt deliberately. **Do not enable it on a rewrite endpoint.**
 
 #### Arrays of repeated records
 

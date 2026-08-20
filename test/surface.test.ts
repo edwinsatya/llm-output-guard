@@ -34,6 +34,8 @@ const ROOT = [
   'jsonScore',
   'languageMismatchScore',
   'languageProfile',
+  'promptEchoDetail',
+  'promptEchoScore',
   'repetitionScore',
   'scriptMismatchScore',
   'scriptProfile',
@@ -169,6 +171,8 @@ export type {
   LanguageOptions,
   ScriptName,
   ScriptOptions,
+  PromptEchoOptions,
+  PromptEchoResult,
 } from '../src/index.js';
 
 export type {

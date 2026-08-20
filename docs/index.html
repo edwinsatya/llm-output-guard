@@ -621,6 +621,40 @@ function judgeableLetters(text, options) {
   return found.filter((ch) => !SCRIPT_NEUTRAL.test(ch));
 }
 
+// src/detectors/prompt-echo.ts
+function promptEchoDetail(text, prompt, options = {}) {
+  const {
+    n = 5,
+    charN = 12,
+    minTokens = 40,
+    nonSpacedCutoff = 0.5,
+    maxSample = 8e3
+  } = options;
+  const output = text.slice(0, maxSample);
+  const mode = options.mode ?? tokenModeOf(output, nonSpacedCutoff);
+  if (typeof prompt !== "string" || prompt.length === 0) return { score: 0, mode };
+  const tokenize = mode === "char" ? chars : words;
+  const run = mode === "char" ? charN : n;
+  const out = tokenize(output);
+  const src = tokenize(prompt.slice(0, maxSample));
+  if (out.length < minTokens) return { score: 0, mode };
+  if (out.length < run || src.length < run) return { score: 0, mode };
+  const seen = /* @__PURE__ */ new Set();
+  for (let i = 0; i + run <= src.length; i++) {
+    seen.add(src.slice(i, i + run).join(" "));
+  }
+  let matched = 0;
+  let total = 0;
+  for (let i = 0; i + run <= out.length; i++) {
+    if (seen.has(out.slice(i, i + run).join(" "))) matched++;
+    total++;
+  }
+  return { score: total === 0 ? 0 : clamp01(matched / total), mode };
+}
+function promptEchoScore(text, prompt, options = {}) {
+  return promptEchoDetail(text, prompt, options).score;
+}
+
 // src/internal/json-scope.ts
 function stringValues(value, out = []) {
   if (typeof value === "string") out.push(value);
@@ -655,6 +689,7 @@ var DEFAULTS = {
   allowJsonFence: true,
   maxLangMismatch: 0.6,
   maxScriptMismatch: 0.5,
+  maxPromptEcho: 0.6,
   ngram: 3,
   redundancyScope: "document"
 };
@@ -762,6 +797,18 @@ function checkOutput(text, options = {}) {
       `${Math.round(s * 100)}% of letters are not in ${wanted.join(" or ")}.`
     );
   }
+  if (opts.prompt) {
+    const { score, mode } = promptEchoDetail(text, opts.prompt, {
+      nonSpacedCutoff: opts.nonSpacedCutoff
+    });
+    add(
+      "PROMPT_ECHO",
+      score,
+      opts.maxPromptEcho,
+      `${Math.round(score * 100)}% of the response is copied from the prompt.`,
+      mode
+    );
+  }
   if (opts.expectLang) {
     const s = languageMismatchScore(text, opts.expectLang);
     add(
@@ -826,6 +873,19 @@ var DEFERRED_TO_END = {
    * and this is one line for the callers who need it.
    */
   expectScript: null,
+  /*
+   * PROMPT_ECHO is deferred for the same reason as SCRIPT_MISMATCH, and it
+   * bites harder. The score is the share of the *whole* output copied from the
+   * prompt, so a trailing window measures the share of that window -- and a
+   * response that opens by echoing the system prompt and then answers properly
+   * reads as 1.000 over its first window and 0.000 over its last. Neither
+   * number describes the response.
+   *
+   * Dilution is the point of the measure: an output that is 10% leaked prompt
+   * and 90% answer should score 0.1, and only the finished response knows what
+   * that ratio is.
+   */
+  prompt: null,
   /*
    * LOW_ENTROPY is deferred for a second reason: cost. The LZ77 pass is
    * 0.4ms at 500 characters and 11ms at its 4000-character sample cap, which
@@ -1063,11 +1123,12 @@ function thresholdFor(code, opts, mode) {
     case 'INVALID_JSON': return 0;
     case 'SCRIPT_MISMATCH': return opts.maxScriptMismatch ?? 0.5;
     case 'LANG_MISMATCH': return opts.maxLangMismatch ?? 0.6;
+    case 'PROMPT_ECHO': return opts.maxPromptEcho ?? 0.6;
     default: return null;
   }
 }
 
-const ORDER = ['EMPTY', 'TOO_SHORT', 'REPETITION', 'TAIL_LOOP', 'LOW_ENTROPY', 'TRUNCATED', 'INVALID_JSON', 'SCRIPT_MISMATCH', 'LANG_MISMATCH'];
+const ORDER = ['EMPTY', 'TOO_SHORT', 'REPETITION', 'TAIL_LOOP', 'LOW_ENTROPY', 'TRUNCATED', 'INVALID_JSON', 'SCRIPT_MISMATCH', 'LANG_MISMATCH', 'PROMPT_ECHO'];
 const PRESETS = ['chat', 'strictJson', 'longForm', 'lenient'];
 
 const $ = (id) => document.getElementById(id);

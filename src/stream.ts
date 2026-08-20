@@ -49,6 +49,20 @@ const DEFERRED_TO_END: CheckOptions = {
   expectScript: null,
 
   /*
+   * PROMPT_ECHO is deferred for the same reason as SCRIPT_MISMATCH, and it
+   * bites harder. The score is the share of the *whole* output copied from the
+   * prompt, so a trailing window measures the share of that window -- and a
+   * response that opens by echoing the system prompt and then answers properly
+   * reads as 1.000 over its first window and 0.000 over its last. Neither
+   * number describes the response.
+   *
+   * Dilution is the point of the measure: an output that is 10% leaked prompt
+   * and 90% answer should score 0.1, and only the finished response knows what
+   * that ratio is.
+   */
+  prompt: null,
+
+  /*
    * LOW_ENTROPY is deferred for a second reason: cost. The LZ77 pass is
    * 0.4ms at 500 characters and 11ms at its 4000-character sample cap, which
    * is 100x the other two detectors combined -- affordable once per response,

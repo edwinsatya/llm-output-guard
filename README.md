@@ -58,6 +58,7 @@ every detector, running on your own pasted output. No API key, no request.
 | `INVALID_JSON` | Prose around the payload, wrong types | Parse + key + schema contract |
 | `SCRIPT_MISMATCH` | Answered in the wrong alphabet | Share of letters outside the expected scripts (opt-in) |
 | `LANG_MISMATCH` | Answered in the wrong language, same alphabet | Function-word profile (opt-in) |
+| `PROMPT_ECHO` | Returned your prompt instead of an answer | Share of output copied verbatim from the prompt (opt-in) |
 
 Every detector runs even after one fails, so a verdict shows the whole picture
 rather than whichever check happened to be ordered first. Each returns **0–1, not
@@ -250,12 +251,13 @@ reproduces it; `-- --json` gives machine-readable output.
 | 8 KB | 0.677 ms | 0.858 ms |
 | 32 KB | 1.014 ms | 1.235 ms |
 
-**One detector is 80% of that.** At 2 KB, `LOW_ENTROPY` costs 0.376 ms and the
-other six together cost 0.081 ms — the LZ77 pass is the whole bill:
+**One detector is most of that.** At 2 KB, `LOW_ENTROPY` costs 0.376 ms and the
+other seven together cost 0.19 ms — the LZ77 pass is the bulk of the bill:
 
 | detector, 2 KB | p50 |
 |---|---|
 | `LOW_ENTROPY` | 0.376 ms |
+| `PROMPT_ECHO` | 0.111 ms |
 | `SCRIPT_MISMATCH` | 0.066 ms |
 | `REPETITION` | 0.048 ms |
 | `TAIL_LOOP` | 0.026 ms |
@@ -331,6 +333,7 @@ patches.
 - Tool *arguments* are checked only when you ask — `checkToolArguments: true` on any adapter, non-streaming responses only. Off by default, and unmeasured before 1.5.
 - `openai`'s `responses.stream()` helper is not wrapped. See the note above; `create({ stream: true })` is.
 - `REPETITION` does not work on Chinese, Japanese or Thai. See above — this is a known, measured gap, not an oversight.
+- `PROMPT_ECHO` cannot tell a degenerate echo from a rewrite, translation or summary, because there is no difference in the text — only in what you asked for. Opt-in, and never enable it on those endpoints.
 - Language detection is a function-word heuristic covering `id`/`en`/`es`. Opt-in, and unreliable under 25 words. `expectScript` is the stronger check where the languages differ in alphabet, and says nothing where they do not.
 - `SCRIPT_MISMATCH` does not run mid-stream. A mid-stream check reads a trailing window, and the language of a window is not the language of the response — an English answer quoting a Chinese passage measures 0.114 whole and 0.500 over its last 400 characters.
 - Truncation from a missing full stop is weak evidence, scored 0.55 and left below the default thresholds on purpose. Lower `maxTruncation` to ~0.5 to catch it, and expect false positives.

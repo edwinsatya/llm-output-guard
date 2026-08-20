@@ -20,6 +20,7 @@ const CODES: ReasonCode[] = [
   'INVALID_JSON',
   'SCRIPT_MISMATCH',
   'LANG_MISMATCH',
+  'PROMPT_ECHO',
 ];
 
 /**
@@ -39,6 +40,7 @@ const OPTION_FOR: Partial<Record<ReasonCode, string>> = {
   TRUNCATED: 'maxTruncation',
   SCRIPT_MISMATCH: 'maxScriptMismatch',
   LANG_MISMATCH: 'maxLangMismatch',
+  PROMPT_ECHO: 'maxPromptEcho',
 };
 
 /**

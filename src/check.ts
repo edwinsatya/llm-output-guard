@@ -6,6 +6,7 @@ import { truncationScore } from './detectors/truncation.js';
 import { jsonScore } from './detectors/json.js';
 import { languageMismatchScore } from './detectors/language.js';
 import { scriptMismatchScore } from './detectors/script.js';
+import { promptEchoDetail } from './detectors/prompt-echo.js';
 import { excerpt } from './internal/tokenize.js';
 import { redundancySpans } from './internal/json-scope.js';
 
@@ -13,7 +14,8 @@ const DEFAULTS: Required<
   Pick<CheckOptions,
     'minLength' | 'maxRepetition' | 'maxTailLoop' | 'maxCompressibility' |
     'maxTruncation' | 'expectJson' | 'allowJsonFence' | 'maxLangMismatch' | 'ngram' |
-    'maxCharTailLoop' | 'nonSpacedCutoff' | 'redundancyScope' | 'maxScriptMismatch'>
+    'maxCharTailLoop' | 'nonSpacedCutoff' | 'redundancyScope' | 'maxScriptMismatch' |
+    'maxPromptEcho'>
 > = {
   minLength: 1,
   maxRepetition: 0.35,
@@ -26,6 +28,7 @@ const DEFAULTS: Required<
   allowJsonFence: true,
   maxLangMismatch: 0.6,
   maxScriptMismatch: 0.5,
+  maxPromptEcho: 0.6,
   ngram: 3,
   redundancyScope: 'document',
 };
@@ -190,6 +193,26 @@ export function checkOutput(
     const s = scriptMismatchScore(text, opts.expectScript);
     add('SCRIPT_MISMATCH', s, opts.maxScriptMismatch,
       `${Math.round(s * 100)}% of letters are not in ${wanted.join(' or ')}.`);
+  }
+
+  /*
+   * Last, because it is the only detector that reads something other than the
+   * response, and the only one whose usefulness depends on what the caller
+   * asked the model to do. See `detectors/prompt-echo.ts` for the task types
+   * it must not be pointed at.
+   *
+   * The mode is reported for the same reason `TAIL_LOOP` reports it, but a
+   * single threshold serves both: this measures the share of output copied
+   * verbatim, which is 1.000 for a full echo and 0.000 for a healthy answer in
+   * either tokenizer. `TAIL_LOOP` needed two because periodicity has a
+   * different base rate per script; a copy either happened or it did not.
+   */
+  if (opts.prompt) {
+    const { score, mode } = promptEchoDetail(text, opts.prompt, {
+      nonSpacedCutoff: opts.nonSpacedCutoff,
+    });
+    add('PROMPT_ECHO', score, opts.maxPromptEcho,
+      `${Math.round(score * 100)}% of the response is copied from the prompt.`, mode);
   }
 
   if (opts.expectLang) {

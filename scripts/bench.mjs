@@ -23,7 +23,8 @@
  * the earliest samples, which is why `WARMUP` exists and why it is reported.
  */
 import { checkOutput, presets, repetitionScore, tailLoopScore, compressibilityScore,
-         truncationScore, jsonScore, scriptMismatchScore, languageMismatchScore } from '../dist/index.js';
+         truncationScore, jsonScore, scriptMismatchScore, languageMismatchScore,
+         promptEchoScore } from '../dist/index.js';
 
 const asJson = process.argv.includes('--json');
 
@@ -82,6 +83,8 @@ for (const size of SIZES) {
  */
 const SAMPLE = prose(2_000);
 const SAMPLE_JSON = json(2_000);
+/** A prompt of realistic size, unrelated to SAMPLE so nothing matches. */
+const PROMPT_SAMPLE = SENTENCES.slice().reverse().join('') + prose(1_000).slice(200);
 for (const [name, fn] of [
   ['REPETITION', () => repetitionScore(SAMPLE)],
   ['TAIL_LOOP', () => tailLoopScore(SAMPLE)],
@@ -90,6 +93,9 @@ for (const [name, fn] of [
   ['INVALID_JSON', () => jsonScore(SAMPLE_JSON, {})],
   ['SCRIPT_MISMATCH', () => scriptMismatchScore(SAMPLE, 'latin')],
   ['LANG_MISMATCH', () => languageMismatchScore(SAMPLE, 'en')],
+  // The only detector reading two texts, so it is the only one whose cost
+  // depends on something other than the response length.
+  ['PROMPT_ECHO', () => promptEchoScore(SAMPLE, PROMPT_SAMPLE)],
 ]) {
   results.detectors.push({ name, ...time(fn) });
 }

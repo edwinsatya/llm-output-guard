@@ -445,11 +445,12 @@ function thresholdFor(code, opts, mode) {
     case 'INVALID_JSON': return 0;
     case 'SCRIPT_MISMATCH': return opts.maxScriptMismatch ?? 0.5;
     case 'LANG_MISMATCH': return opts.maxLangMismatch ?? 0.6;
+    case 'PROMPT_ECHO': return opts.maxPromptEcho ?? 0.6;
     default: return null;
   }
 }
 
-const ORDER = ['EMPTY', 'TOO_SHORT', 'REPETITION', 'TAIL_LOOP', 'LOW_ENTROPY', 'TRUNCATED', 'INVALID_JSON', 'SCRIPT_MISMATCH', 'LANG_MISMATCH'];
+const ORDER = ['EMPTY', 'TOO_SHORT', 'REPETITION', 'TAIL_LOOP', 'LOW_ENTROPY', 'TRUNCATED', 'INVALID_JSON', 'SCRIPT_MISMATCH', 'LANG_MISMATCH', 'PROMPT_ECHO'];
 const PRESETS = ['chat', 'strictJson', 'longForm', 'lenient'];
 
 const $ = (id) => document.getElementById(id);
