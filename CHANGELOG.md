@@ -1,5 +1,241 @@
 # llm-output-guard
 
+## 1.5.0
+
+### Minor Changes
+
+- cb8fb96: New opt-in: `checkToolArguments`, for a model that loops inside the arguments it
+  passes to a tool.
+
+  ```ts
+  const client = withOutputGuard(new OpenAI(), {
+    ...presets.chat,
+    checkToolArguments: true,
+  });
+  ```
+
+  Available on all three adapters — `./openai` (both `chat.completions` and
+  `responses`), `./anthropic`, and `./ai-sdk`.
+
+  ## The hole
+
+  1.0.1 established that a tool-calling turn is judged by its **preamble**, because
+  the text beside a tool call is not the answer. That was right, and it left the
+  answer itself unmeasured. The README said so and pointed at the provider's schema
+  validation as the thing covering it.
+
+  Schema validation covers _types_. A model that loops does not produce the wrong
+  type — it produces a valid string with nothing in it:
+
+  ```json
+  {
+    "query": "site reliability engineering site reliability engineering …",
+    "limit": 10
+  }
+  ```
+
+  That is a schema-valid `string`. The provider hands it to your tool without
+  complaint, and you have issued a garbage search — or, if the tool writes,
+  persisted the loop. For anyone running agents this was invisible, on the traffic
+  shape agents produce most.
+
+  ## What it measures
+
+  Redundancy only, per string value, under the thresholds your guard already uses.
+  Reason codes are unchanged, so existing handling keeps working; the `message`
+  says the loop was found in an argument. `message` is outside this package's
+  semver promise, which is what makes it the right place to put that.
+
+  Everything else is deliberately off. `LOW_ENTROPY` because JSON is legitimately
+  repetitive at the character level — the same reason `presets.strictJson` turns it
+  off. `TRUNCATED`, `TOO_SHORT` and `INVALID_JSON` because the provider already
+  guarantees the arguments parse and match the schema. `SCRIPT_MISMATCH` and
+  `LANG_MISMATCH` because an argument is not prose addressed to a user, and a query
+  in another language is ordinary rather than degenerate.
+
+  Values are measured individually, never as a serialised document — two calls
+  against one schema are legitimately near-identical documents, which is the rule
+  `redundancyScope: 'jsonValues'` already follows.
+
+  ## The false positive it would otherwise have shipped
+
+  A tool that takes no parameters is called with `{}`, and `{}` is one of the
+  shapes `emptinessScore` exists to catch — so the obvious implementation scores
+  `EMPTY: 1` and fails every call to a no-argument tool. That is the 1.0.1
+  tool-call bug again in a new place, and it was caught by a test rather than by
+  review.
+
+  Arguments carrying no strings at all (`{"lat":-6.2,"zoom":11}`) are skipped for
+  the same reason: no content to judge, so no verdict is manufactured. A call with
+  nothing measurable and no preamble reports nothing, following `checkPreamble`'s
+  existing `null` rule so a calibration run is not poisoned with `EMPTY` spikes
+  that describe an agent's tool use.
+
+  ## Limits
+
+  **Non-streaming responses only.** Arguments arrive as JSON fragments that do not
+  parse until the call is complete, so there is nothing meaningful to measure
+  mid-stream.
+
+  Off by default and absent from every preset, so nothing changes for an existing
+  caller. Switching it on can only make a response fail that previously passed.
+
+- b6cd92b: New opt-in detector: `PROMPT_ECHO`, for a model that returns your prompt instead
+  of an answer.
+
+  ```ts
+  checkOutput(raw, { ...presets.chat, prompt });
+  ```
+
+  ## Why it needed a detector of its own
+
+  A response that replays the system prompt, the question, or a few-shot example is
+  non-empty, long enough, not repetitive, properly terminated, valid JSON if that
+  is what the prompt held, in the right script and the right language. **All ten of
+  the other detectors read it as healthy**, and each of them is right: by every
+  measure they take, it is.
+
+  It shows up most with quantised and self-hosted models, and with a chat template
+  that has drifted from the one the weights were trained on. The model loses track
+  of which turn it is in and continues the transcript rather than answering it.
+
+  ## Runs, not similarity
+
+  The question is not how similar two texts are, it is how much of the output the
+  model actually wrote. A good answer to a detailed question reuses the question's
+  vocabulary heavily and its _sequences_ not at all, so the detector matches runs
+  of five word tokens (twelve characters in non-spaced scripts). Measured:
+
+  ```
+  full echo of the prompt                     1.000
+  echoed system prompt                        0.953
+  the question repeated, then an answer       0.463
+  the whole system prompt, then an answer     0.446
+  half the system prompt, then an answer      0.354
+  an answer that shares the question's words  0.060
+  a clean answer                              0.000
+  ```
+
+  `maxPromptEcho` defaults to **0.6** — above every case that still contains an
+  answer, below every true echo.
+
+  The score is a **share**, so partial leaks land in the middle by design and a
+  longer answer dilutes the same leak further. That is the honest reading: an
+  output that is 10% leaked prompt and 90% answer is a milder failure than one that
+  is nothing but prompt. Lower the threshold toward 0.4 to fail those too.
+
+  ## The false positive it cannot avoid
+
+  Rewriting, translating, summarising, fixing grammar, extracting fields: on all of
+  these, copying from the input **is** the job, and a correct answer scores high.
+  Nothing in the text separates that from a degenerate echo, because there is no
+  difference in the text — the difference is in what you asked for.
+
+  So it is opt-in, absent from every preset, and requires the prompt to be passed
+  deliberately. **Do not enable it on a rewrite endpoint.** There is a test
+  asserting a correct grammar fix scores 0.717, so this cannot later be mistaken
+  for a bug.
+
+  ## Limits
+
+  **It does not run mid-stream**, for a sharper version of the reason
+  `SCRIPT_MISMATCH` does not: the score is a share of the whole output, so a
+  trailing window measures the share of that window. One leak-then-answer response
+  reads 0.707 over its opening 400 characters and 0.446 across the document.
+
+  **It is a `checkOutput` option, not an adapter one.** Adapter options are fixed
+  when you wrap the client, and the prompt changes per call, so a static value
+  there would be meaningless. Reading the prompt out of the request is a natural
+  follow-up and is not in this release.
+
+  Off by default and absent from every preset, so nothing changes for an existing
+  caller. `ReasonCode` gained a member, which is a minor under this package's rule
+  for an opt-in detector and is still a compile error for a consumer switching
+  exhaustively over it with a `never` fallback.
+
+  New exports: `promptEchoScore`, `promptEchoDetail`, and the types
+  `PromptEchoOptions` and `PromptEchoResult`.
+
+### Patch Changes
+
+- cb8fb96: Add `npm run bench`, and publish what `checkOutput` actually costs.
+
+  Documentation and tooling only. No behaviour changed, no threshold moved, no
+  export added.
+
+  The README has called this package "safe on a hot path" since 0.1, which is a
+  latency claim, and there was no latency figure anywhere near it. The only
+  numbers that existed were in a comment in `stream.ts`, cited to justify
+  deferring `LOW_ENTROPY` off the mid-stream path.
+
+  ```
+  checkOutput(presets.chat)      p50        p99
+    500 B                     0.383ms    0.480ms
+    2 KB                      0.457ms    0.553ms
+    8 KB                      0.677ms    0.858ms
+    32 KB                     1.014ms    1.235ms
+  ```
+
+  The breakdown is the useful part. At 2 KB, `LOW_ENTROPY` is **0.376 ms** and the
+  other six detectors together are **0.081 ms** — the LZ77 pass is roughly 80% of
+  the cost of a full check. So there is exactly one latency lever in this package,
+  and `presets.strictJson` already pulls it: it sets `maxCompressibility: null`
+  because JSON is legitimately repetitive, and measures 0.082 ms against `chat`'s
+  0.457 ms as a side effect.
+
+  `npm run bench` prints the table; `npm run bench -- --json` emits it for tracking
+  over time. The script documents why its own absolute numbers should not be
+  quoted as a promise: they are wall-clock timings on one machine with a warm JIT,
+  and the ratios between detectors are the part that travels.
+
+- 14e8ce1: Cut the README back down, add four badges, and give performance a page of its own.
+
+  Documentation only. No behaviour changed, no threshold moved, no export added.
+
+  1.3.1 restructured this README from 37 KB to 13 KB on the argument that a
+  reliability library gets about thirty seconds to explain itself. Four releases
+  of features since then took it back to **16.9 KB and 2,499 words**, mostly by
+  adding good material to the wrong file.
+
+  It is now **12.2 KB and 1,685 words**, a third shorter, and the rule is the one
+  1.3.1 set: **nothing was deleted, only moved.**
+
+  - **Structured output** — 55 lines of `requiredKeys`, Standard Schema, the
+    synchronous-validation rule — moved to `docs/detectors.md`. The README keeps a
+    six-line example and a link.
+  - **The benchmark tables** moved to a new `docs/performance.md`, along with the
+    measurement caveats and the `maxCompressibility` lever. Design notes keep the
+    headline: sub-millisecond, one detector accounting for most of it.
+  - **`SCRIPT_MISMATCH` and `PROMPT_ECHO`** each had a section explaining their
+    reasoning; both now sit in a shared **Common setups** section at a few lines
+    apiece, pointing at the reference for the numbers.
+  - **Script coverage** folded into a Design notes bullet, which is where a reader
+    deciding whether to install actually needs it.
+
+  The **Stability** section stays in the README, tightened but not relocated, for
+  the reason 1.3.1 gave: it is what tells a reader what a version number means
+  here, and it should not require a second click.
+
+  Every internal link, anchors included, is verified to resolve.
+
+  ## Badges
+
+  Four added, and the row split in two: what you are installing (npm, downloads,
+  min+gzip, dependencies, types, node) above whether it is looked after (CI, last
+  commit, commit activity, licence).
+
+  **Every GitHub-backed badge carries an explicit `cacheSeconds`,** because the
+  defaults are dangerous here. `last-commit` and `commit-activity` ship
+  `max-age=120`, which has camo refetch them **720 times a day** — 720 daily
+  chances to catch GitHub's API rate limited and pin the error badge for its whole
+  TTL. That is the failure 1.4.1 fixed on the downloads badge, and these two were
+  36× more exposed to it. They are now 6 hours and 24 hours respectively.
+
+  Five candidates were measured and rejected rather than added: `repo-size`
+  reports 832 KiB for a package that ships 5 KB, `contributors` reads 1,
+  `stars` renders no value at all, `issues` reads "0 open" which says nothing
+  either way, and `v/tag` duplicates the npm version badge.
+
 ## 1.4.1
 
 ### Patch Changes
