@@ -116,62 +116,15 @@ they spell the same idea differently, and that is what the profiles are built
 from — `não`/`no`, `com`/`con`, `em`/`en`, `uma`/`una` for Portuguese against
 Spanish; `il`/`el`, `di`/`de`, `che`/`que`, `gli` for Italian.
 
-> **`expectLang: 'es'` is the weak expectation.** Its profile predates that rule
-> and is built from exactly the generic Romance words it warns about — `de`,
-> `que`, `por`, `para`, `no`, `se`, `como` — which hit Portuguese, Italian and
-> French text nearly as hard as Spanish. Measured over two unrelated sample
-> sets, a response in another Romance language scored against `'es'`:
->
-> ```
-> pt 0.36 / 0.50     it 0.83 / 0.33     fr 0.30 / 0.33
-> ```
->
-> Those sit under the 0.6 default, so **Spanish will not reliably catch
-> Portuguese, Italian or French.** `expectScript` cannot help — they share the
-> Latin alphabet. Every other expectation scores 0.70 or better against every
-> other language, and every language measured against itself scores 0.000.
-> Fixing it means re-choosing the `es` profile, which is a behaviour change and
-> waits for a major.
+Every profile is built that way as of 1.7.0, `es` included. It used to hold the
+twenty commonest Spanish function words — `de`, `que`, `por`, `para`, `no`,
+`se`, `como` — which Portuguese, Italian and French all share, so a Portuguese
+answer scored **0.36** against `expectLang: 'es'` and passed. Rebuilt around
+where Spanish differs (`y`/`e`, `es`/`é`, `no`/`não`, `muy`/`muito`,
+`cuando`/`quando`, `donde`/`onde`), the same answer scores **0.91**.
 
-They report **separate codes and separate scores** on purpose. A share of
-letters and a relative share of function-word hits are different distributions,
-and one histogram holding both describes neither.
-
-**Pass every script an answer may legitimately contain.**
-
-| You asked for | Pass |
-|---|---|
-| English, Spanish, Indonesian, Vietnamese… | `'latin'` |
-| Chinese | `['han', 'latin']` |
-| Japanese | `['han', 'kana', 'latin']` |
-| Korean | `['hangul', 'latin']` |
-| Russian, Arabic, Hindi, Greek, Hebrew, Thai | `['cyrillic' \| 'arabic' \| …, 'latin']` |
-
-`'latin'` belongs in almost all of them: a Chinese answer about React still
-contains `useEffect`, and a Korean technical answer quotes Latin API names. It
-costs nothing — including it only widens what counts as acceptable.
-
-**Code fences, inline code and URLs are removed before measuring**, because
-every identifier in a TypeScript block is Latin regardless of what language the
-answer is in. The corpus carries this exact trap: a correct Chinese answer with
-a TypeScript block scores 0.000, and 0.632 with `ignoreCode` disabled. A
-response that is *only* a code block has no opinion about language and abstains
-entirely.
-
-The detector abstains — scores 0 — below 12 letters, on an unknown script name,
-and on text with no letters at all.
-
-**It does not run mid-stream.** Which language a model answered in is a property
-of the whole response, and a mid-stream check reads a trailing window. Measured
-on an English answer that ends by quoting a Chinese passage: 0.114 across the
-document, 0.206 over the last 1000 characters, 0.500 over the last 400. The
-document is healthy and the window says it is half wrong. If you want the early
-signal — and it is a good one, since a model picks its language in the first
-tokens — read the buffer yourself:
-
-```ts
-const verdict = checkOutput(guard.text, { expectScript: 'latin' });
-```
+Measured over two unrelated sample sets, every language scores **0.000** against
+itself and every cross-language pair scores **above the 0.6 default**.
 
 #### Returning the prompt instead of an answer
 

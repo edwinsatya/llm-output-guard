@@ -16,33 +16,31 @@ import { words } from '../internal/tokenize.js';
  * for Portuguese against Spanish; `il`/`el`, `di`/`de`, `che`/`que`, `gli` for
  * Italian; `les`/`des`/`du`/`dans`/`avec`/`cette` for French.
  *
- * ## `es` is the weak expectation, and it is measured
+ * ## `es` was the weak expectation until 1.7.0
  *
- * The three original profiles cannot be re-chosen -- their numbers are
- * behaviour, and a threshold change is a major here -- and `es` is built from
- * exactly the generic Romance words the rule above warns about: `de`, `que`,
- * `por`, `para`, `no`, `se`, `como`. Those hit Portuguese, Italian and French
- * text almost as hard as they hit Spanish, which keeps `target` high and the
- * score low.
+ * It originally held the twenty commonest Spanish function words, which is
+ * exactly what the rule above warns against: `de`, `que`, `por`, `para`, `no`,
+ * `se`, `como` are shared with Portuguese, Italian or French, so they raised
+ * `target` on those languages as much as `best` and the score collapsed. A
+ * Portuguese answer scored 0.36 against `expectLang: 'es'` and passed.
  *
- * Measured over two unrelated sample sets, text answered in another Romance
- * language while `expectLang: 'es'`:
+ * It is now built the same way as the others, from where Spanish differs:
+ * `y`/`e`, `es`/`é`,`è`, `no`/`não`,`non`, `muy`/`muito`,`molto`,
+ * `pero`/`mas`,`ma`, `cuando`/`quando`, `donde`/`onde`,`dove`, `sin`/`sem`,
+ * `hasta`/`até`. Measured over two unrelated sample sets, a response in
+ * another language scored against `'es'`:
  *
- *   pt 0.36 / 0.50    it 0.83 / 0.33    fr 0.30 / 0.33
+ *   pt 0.36 -> 0.91 / 0.50 -> 0.75      it 0.83 -> 1.00 / 0.33 -> 1.00
+ *   fr 0.30 -> 1.00 / 0.33 -> 1.00      nl 0.69 -> 1.00 / 0.73 -> 1.00
  *
- * All of those sit under the 0.6 default, so **`expectLang: 'es'` does not
- * reliably catch Portuguese, Italian or French.** Every other expectation
- * scores 0.70 or better against every other language, and every language
- * measured against itself scores 0.000.
- *
- * `expectScript` is no help here either -- these all share the Latin alphabet.
- * The fix is a tighter `es` profile, which is a behaviour change and waits for
- * a major.
+ * Spanish still scores 0.000 against itself on both sets, and no other
+ * expectation's verdict changes -- which is what makes this strictly more
+ * accurate rather than a threshold change.
  */
 const PROFILES: Record<string, Set<string>> = {
   id: new Set(['yang', 'dan', 'di', 'untuk', 'dengan', 'ini', 'itu', 'dari', 'pada', 'tidak', 'adalah', 'akan', 'bisa', 'kita', 'saya', 'atau', 'juga', 'dalam', 'sudah', 'ke']),
   en: new Set(['the', 'and', 'of', 'to', 'in', 'is', 'that', 'for', 'it', 'with', 'as', 'this', 'are', 'be', 'you', 'on', 'not', 'or', 'can', 'we']),
-  es: new Set(['el', 'la', 'de', 'que', 'y', 'en', 'los', 'un', 'por', 'con', 'las', 'para', 'una', 'es', 'no', 'se', 'del', 'al', 'lo', 'como']),
+  es: new Set(['el', 'los', 'las', 'y', 'es', 'no', 'muy', 'pero', 'este', 'esta', 'sus', 'cuando', 'donde', 'porque', 'sin', 'hasta', 'aunque', 'mismo', 'otro', 'todos']),
   pt: new Set(['não', 'é', 'são', 'uma', 'com', 'em', 'do', 'da', 'dos', 'das', 'ao', 'você', 'também', 'muito', 'mais', 'já', 'pelo', 'isso', 'seu', 'sua']),
   it: new Set(['il', 'di', 'che', 'non', 'per', 'della', 'nel', 'nella', 'gli', 'più', 'anche', 'perché', 'questo', 'sono', 'essere', 'dei', 'delle', 'agli', 'però', 'sia']),
   fr: new Set(['les', 'des', 'du', 'qui', 'dans', 'pour', 'sur', 'pas', 'ce', 'est', 'plus', 'nous', 'vous', 'avec', 'cette', 'aux', 'être', 'mais', 'leur', 'tout']),

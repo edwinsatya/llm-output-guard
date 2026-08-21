@@ -73,15 +73,16 @@ describe('every language scores zero against itself', () => {
 
 describe('the languages that are actually separable', () => {
   /**
-   * Every pair except the ones with `es` as the expectation, which are covered
-   * — and measured — separately below.
+   * Every pair, `es` included. Until 1.7.0 that expectation had to be exempted
+   * here, because its profile was the twenty commonest Spanish function words
+   * and most of them are shared with Portuguese, Italian or French.
    */
-  it('scores every other cross-language pair above the 0.6 default', () => {
+  it('scores every cross-language pair above the 0.6 default', () => {
     const weak: string[] = [];
     for (const sample of SAMPLES) {
       for (const text of LANGS) {
         for (const expected of LANGS) {
-          if (text === expected || expected === 'es') continue;
+          if (text === expected) continue;
           const score = languageMismatchScore(sample[text], expected);
           if (score <= 0.6) weak.push(`${text} as ${expected} = ${score.toFixed(2)}`);
         }
@@ -102,31 +103,46 @@ describe('the languages that are actually separable', () => {
 });
 
 /**
- * The documented weakness, asserted so it cannot be mistaken for a bug and
- * cannot quietly get worse.
+ * The weakness that used to live here, now the other way round.
  *
- * `es` is built from the generic Romance function words — `de`, `que`, `por`,
- * `para`, `no`, `se`, `como` — which hit Portuguese, Italian and French text
- * nearly as hard as Spanish. That keeps `target` high and the score low. The
- * profile cannot be re-chosen without changing behaviour, which is a major.
+ * `es` originally held the commonest Spanish function words -- `de`, `que`,
+ * `por`, `para`, `no`, `se`, `como` -- which Portuguese, Italian and French
+ * share. Those raised `target` as much as `best`, so the score collapsed and a
+ * Portuguese answer passed as Spanish at 0.36.
  */
-describe('expectLang: es is the weak expectation', () => {
-  it('does not reliably catch the other Romance languages', () => {
-    const measured = ['pt', 'it', 'fr'].map((lang) => ({
-      lang,
-      scores: SAMPLES.map((s) => languageMismatchScore(s[lang], 'es')),
-    }));
-
-    // At least one sample of each sits under the default, which is the point.
-    for (const { lang, scores } of measured) {
-      expect(Math.min(...scores), `${lang} against es`).toBeLessThan(0.6);
+describe('expectLang: es separates Spanish from its neighbours', () => {
+  it('catches the other Romance languages, which it used to miss', () => {
+    for (const sample of SAMPLES) {
+      for (const lang of ['pt', 'it', 'fr']) {
+        const score = languageMismatchScore(sample[lang], 'es');
+        expect(score, `${lang} answered where Spanish was asked for`).toBeGreaterThan(0.6);
+      }
     }
   });
 
-  it('still catches the languages that share none of its words', () => {
+  it('and still says nothing about Spanish itself', () => {
+    for (const sample of SAMPLES) {
+      expect(languageMismatchScore(sample.es, 'es')).toBe(0);
+    }
+  });
+
+  it('still catches the languages that were never the problem', () => {
     for (const sample of SAMPLES) {
       for (const lang of ['en', 'id', 'de', 'nl']) {
         expect(languageMismatchScore(sample[lang], 'es'), lang).toBeGreaterThan(0.6);
+      }
+    }
+  });
+
+  /**
+   * What made replacing the profile a minor rather than a major: it catches
+   * strictly more, false-positives no more, and moves no other expectation's
+   * verdict.
+   */
+  it('leaves every other expectation undisturbed', () => {
+    for (const sample of SAMPLES) {
+      for (const lang of LANGS) {
+        expect(languageMismatchScore(sample[lang], lang), `${lang} vs itself`).toBe(0);
       }
     }
   });
