@@ -196,12 +196,15 @@ truths.
 
 ## Calibrate against your own traffic
 
-The shipped presets are tuned on a corpus that is **not your traffic**. Log your
-scores for a week, then derive thresholds you can defend:
+The shipped presets are tuned on a corpus that is **not your traffic**. Score the
+responses you already have, then derive thresholds you can defend:
 
 ```bash
-npx llm-output-guard calibrate scores.jsonl --fpr 0.001
+npx llm-output-guard check logs/*.txt --json | npx llm-output-guard calibrate --fpr 0.001
 ```
+
+`check` also works as a CI assertion — it exits 1 when anything is degenerate,
+2 when the input cannot be read.
 
 The report tells you when your sample is too small to support the rate you asked
 for, and distinguishes real separation in your data from a false-positive budget —

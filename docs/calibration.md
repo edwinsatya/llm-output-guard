@@ -3,6 +3,46 @@
 The shipped presets are tuned on this repo's fixture corpus, which is not your
 traffic. This is how you replace them with numbers you can defend.
 
+## If you do not have a week of logged scores
+
+You probably have something better already: the responses themselves. `check`
+scores them, and its output is exactly what `calibrate` reads.
+
+```bash
+# a directory of captured responses
+npx llm-output-guard check logs/*.txt --json > scores.jsonl
+
+# or the response log you already write, one JSON record per line
+cat responses.jsonl | npx llm-output-guard check --jsonl --json > scores.jsonl
+
+# the whole loop, in one line
+npx llm-output-guard check logs/*.txt --json | npx llm-output-guard calibrate --fpr 0.001
+```
+
+Under `--jsonl` the response text is dug out of each line the same way
+`calibrate` digs out scores — a bare string, an obvious field name, or a raw
+provider envelope all work:
+
+```
+"the response text"
+{"text":"the response text"}
+{"choices":[{"message":{"content":"the response text"}}]}
+{"content":[{"type":"text","text":"the response text"}]}
+```
+
+Lines carrying no response are **counted and reported**, not scored as healthy.
+A logged tool-call turn has no assistant text, so it lands in that count rather
+than putting an `EMPTY: 1` spike into your distribution that describes your
+agent's tool use instead of any degeneration.
+
+`check` is also an assertion. The exit code is **0** when everything passed,
+**1** when anything was judged degenerate, and **2** when the input could not be
+read — so it drops into CI or an eval suite as-is:
+
+```bash
+npx llm-output-guard check fixtures/*.txt --preset strictJson --quiet
+```
+
 ## Calibrating against your own traffic
 
 The shipped presets are tuned on the fixture corpus, which is not your traffic.
