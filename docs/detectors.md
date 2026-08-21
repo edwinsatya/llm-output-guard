@@ -105,9 +105,33 @@ corpus a response answered entirely in the wrong script scores **1.000**, and a
 healthy response measured against its own script scores **0.000–0.028**.
 
 `LANG_MISMATCH` reads function words. It distinguishes languages that share an
-alphabet — Spanish from English — and pays for it: three languages, and
-unreliable under 25 words. Where both apply, the script answer is the one to
-trust.
+alphabet — Spanish from English — and pays for it: eight languages
+(`id` `en` `es` `pt` `it` `fr` `de` `nl`), and unreliable under 25 words. Where
+both apply, the script answer is the one to trust.
+
+**A profile is not a frequency list.** The score is `(best - target) / best`
+across every profile, so a word two languages both own raises `target` as much
+as `best` and pushes the score toward zero. What separates languages is where
+they spell the same idea differently, and that is what the profiles are built
+from — `não`/`no`, `com`/`con`, `em`/`en`, `uma`/`una` for Portuguese against
+Spanish; `il`/`el`, `di`/`de`, `che`/`que`, `gli` for Italian.
+
+> **`expectLang: 'es'` is the weak expectation.** Its profile predates that rule
+> and is built from exactly the generic Romance words it warns about — `de`,
+> `que`, `por`, `para`, `no`, `se`, `como` — which hit Portuguese, Italian and
+> French text nearly as hard as Spanish. Measured over two unrelated sample
+> sets, a response in another Romance language scored against `'es'`:
+>
+> ```
+> pt 0.36 / 0.50     it 0.83 / 0.33     fr 0.30 / 0.33
+> ```
+>
+> Those sit under the 0.6 default, so **Spanish will not reliably catch
+> Portuguese, Italian or French.** `expectScript` cannot help — they share the
+> Latin alphabet. Every other expectation scores 0.70 or better against every
+> other language, and every language measured against itself scores 0.000.
+> Fixing it means re-choosing the `es` profile, which is a behaviour change and
+> waits for a major.
 
 They report **separate codes and separate scores** on purpose. A share of
 letters and a relative share of function-word hits are different distributions,

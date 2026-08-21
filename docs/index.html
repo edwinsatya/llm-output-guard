@@ -532,7 +532,12 @@ function jsonScore(text, options = {}) {
 var PROFILES = {
   id: /* @__PURE__ */ new Set(["yang", "dan", "di", "untuk", "dengan", "ini", "itu", "dari", "pada", "tidak", "adalah", "akan", "bisa", "kita", "saya", "atau", "juga", "dalam", "sudah", "ke"]),
   en: /* @__PURE__ */ new Set(["the", "and", "of", "to", "in", "is", "that", "for", "it", "with", "as", "this", "are", "be", "you", "on", "not", "or", "can", "we"]),
-  es: /* @__PURE__ */ new Set(["el", "la", "de", "que", "y", "en", "los", "un", "por", "con", "las", "para", "una", "es", "no", "se", "del", "al", "lo", "como"])
+  es: /* @__PURE__ */ new Set(["el", "la", "de", "que", "y", "en", "los", "un", "por", "con", "las", "para", "una", "es", "no", "se", "del", "al", "lo", "como"]),
+  pt: /* @__PURE__ */ new Set(["n\xE3o", "\xE9", "s\xE3o", "uma", "com", "em", "do", "da", "dos", "das", "ao", "voc\xEA", "tamb\xE9m", "muito", "mais", "j\xE1", "pelo", "isso", "seu", "sua"]),
+  it: /* @__PURE__ */ new Set(["il", "di", "che", "non", "per", "della", "nel", "nella", "gli", "pi\xF9", "anche", "perch\xE9", "questo", "sono", "essere", "dei", "delle", "agli", "per\xF2", "sia"]),
+  fr: /* @__PURE__ */ new Set(["les", "des", "du", "qui", "dans", "pour", "sur", "pas", "ce", "est", "plus", "nous", "vous", "avec", "cette", "aux", "\xEAtre", "mais", "leur", "tout"]),
+  de: /* @__PURE__ */ new Set(["der", "die", "das", "und", "ist", "nicht", "ein", "eine", "sich", "mit", "den", "f\xFCr", "auf", "von", "dem", "werden", "oder", "auch", "wird", "kann"]),
+  nl: /* @__PURE__ */ new Set(["het", "een", "niet", "zijn", "worden", "maar", "deze", "wordt", "ook", "naar", "bij", "over", "door", "tussen", "omdat", "moet", "kan", "heeft", "dat", "van"])
 };
 function languageProfile(text) {
   const w = words(text);
@@ -917,8 +922,44 @@ var DEFERRED_TO_END = {
    */
   maxCompressibility: null
 };
+var EARLY_DOCUMENT_MIN = 600;
+var EARLY_DOCUMENT_CERTAINTY = 0.9;
+var EARLY_DOCUMENT_SAMPLE = 8e3;
+var DOCUMENT_ONLY = {
+  minLength: 0,
+  maxRepetition: null,
+  maxTailLoop: null,
+  maxCharTailLoop: null,
+  maxCompressibility: null,
+  maxTruncation: null,
+  expectJson: false,
+  expectLang: null,
+  finishReason: void 0,
+  maxScriptMismatch: EARLY_DOCUMENT_CERTAINTY,
+  maxPromptEcho: EARLY_DOCUMENT_CERTAINTY
+};
+function mergeEarly(windowVerdict, document) {
+  if (!document) return windowVerdict;
+  const reasons = [...windowVerdict.reasons, ...document.reasons];
+  return {
+    ...windowVerdict,
+    ok: reasons.length === 0,
+    reasons,
+    scores: { ...windowVerdict.scores, ...document.scores },
+    ...document.modes || windowVerdict.modes ? { modes: { ...windowVerdict.modes, ...document.modes } } : {}
+  };
+}
 function createStreamGuard(options = {}) {
-  const { checkEvery = 400, warmup = 240, window = 2e3, ...checkOptions } = options;
+  const {
+    checkEvery = 400,
+    warmup = 240,
+    window = 2e3,
+    earlyDocumentChecks = false,
+    ...checkOptions
+  } = options;
+  const earlyDocument = earlyDocumentChecks && Boolean(checkOptions.expectScript || checkOptions.prompt);
+  let nextDocumentAt = EARLY_DOCUMENT_MIN;
+  let documentSettled = false;
   let text = "";
   let sinceCheck = 0;
   let checks = 0;
@@ -938,7 +979,12 @@ function createStreamGuard(options = {}) {
       sinceCheck = 0;
       checks += 1;
       const recent = text.length > window ? text.slice(-window) : text;
-      return checkOutput(recent, { ...checkOptions, ...DEFERRED_TO_END });
+      const verdict = checkOutput(recent, { ...checkOptions, ...DEFERRED_TO_END });
+      if (!earlyDocument || documentSettled || text.length < nextDocumentAt) return verdict;
+      nextDocumentAt = text.length * 2;
+      const head = text.length > EARLY_DOCUMENT_SAMPLE ? text.slice(0, EARLY_DOCUMENT_SAMPLE) : text;
+      if (head.length >= EARLY_DOCUMENT_SAMPLE) documentSettled = true;
+      return mergeEarly(verdict, checkOutput(head, { ...checkOptions, ...DOCUMENT_ONLY }));
     },
     end(finishReason) {
       return checkOutput(text, {

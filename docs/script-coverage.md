@@ -16,7 +16,7 @@ and get different treatment:
 | `REPETITION` | **Blind — see below** | Word n-grams, works |
 | `LOW_ENTROPY`, `TRUNCATED`, `INVALID_JSON`, `EMPTY`, `TOO_SHORT` | Character- or structure-based, unaffected | Same |
 | `SCRIPT_MISMATCH` | **Covered** — `expectScript: ['han', 'kana', 'thai', …]` | Covered, all ten scripts |
-| `LANG_MISMATCH` | Not covered (`id`/`en`/`es` only) | `id`/`en`/`es` only |
+| `LANG_MISMATCH` | Not covered — all eight profiles are Latin-script | Eight languages, `id` `en` `es` `pt` `it` `fr` `de` `nl` |
 
 Mode is chosen per detector, from the span that detector actually reads — so a
 reply that answers in English and then loops in Chinese puts the *tail* detector
@@ -98,8 +98,8 @@ output starts to reach.
 ## Answering in the wrong script
 
 The one row in that table where non-spaced scripts are not the disadvantaged
-case. `LANG_MISMATCH` reads function words and knows three languages, none of
-them written in these scripts. `SCRIPT_MISMATCH` reads characters, so it covers
+case. `LANG_MISMATCH` reads function words and knows eight languages, every one
+of them written in the Latin alphabet and none in these scripts. `SCRIPT_MISMATCH` reads characters, so it covers
 all ten — and it is *more* certain here than on Latin traffic, because Han, Kana,
 Hangul, Thai, Cyrillic, Arabic, Devanagari, Greek and Hebrew each occupy a
 disjoint block of Unicode:

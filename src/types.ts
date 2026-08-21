@@ -121,7 +121,7 @@ export interface CheckOptions {
    * Script the response must be written in, or several. Off by default.
    *
    * The blunt half of language checking, and the reliable half. `expectLang`
-   * asks *which language is this* from function words and knows three of them;
+   * asks *which language is this* from function words and knows eight of them;
    * this asks *is this even the right alphabet*, which needs no word list and
    * is decisive from about a dozen letters. Measured on this repo's corpus, a
    * response answered entirely in the wrong script scores 1.000, and a healthy
@@ -171,7 +171,18 @@ export interface CheckOptions {
    * that answers *and* leaks, and expect to see ordinary preamble with it.
    */
   maxPromptEcho?: number;
-  /** Expected language code ('id' | 'en' | 'es'). Off by default. */
+  /**
+   * Expected language code. Off by default. `supportedLanguages` lists what is
+   * recognised: `id`, `en`, `es`, `pt`, `it`, `fr`, `de`, `nl`.
+   *
+   * This is the same-alphabet half of language checking; `expectScript` is the
+   * other half and the stronger one wherever the alphabets differ.
+   *
+   * **`'es'` is the weak expectation.** Its profile is built from function
+   * words the other Romance languages share, so Portuguese, Italian and French
+   * all score under the default threshold against it. See
+   * `detectors/language.ts` for the measurements.
+   */
   expectLang?: string | null;
   /** Language-mismatch threshold. Default 0.6. */
   maxLangMismatch?: number;

@@ -328,3 +328,27 @@ for the numbers.
 > **Do not enable this on a rewrite, translate, summarise or extract endpoint.**
 > Copying from the input is the job on those, so a correct answer scores high and
 > the detector measures the task rather than a failure.
+
+## Aborting a wrong-language stream early
+
+`SCRIPT_MISMATCH` and `PROMPT_ECHO` are judged at the end of a stream by
+default, which means the whole response is already paid for by the time either
+fires. `earlyDocumentChecks: true` lets them judge the buffer as it arrives:
+
+```ts
+const client = withOutputGuard(new OpenAI(), {
+  ...presets.chat,
+  expectScript: 'latin',
+  earlyDocumentChecks: true,
+  onDegenerate: 'abort',
+});
+```
+
+Measured on a 3,000-character response answered entirely in the wrong script:
+**7 of 30 chunks consumed instead of 30**, with the upstream request cancelled —
+the same transport-level abort the redundancy detectors already trigger.
+
+It is off by default and carries a measured false-positive risk, because the
+buffer is a prefix and a prefix over-reports both detectors. Read
+[docs/streaming.md](./streaming.md#judging-the-whole-response-early) before
+switching it on — the floor, the bar, and the numbers behind both are there.

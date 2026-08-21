@@ -2,7 +2,7 @@
  * Script-level language mismatch.
  *
  * The sibling of `languageMismatchScore`, and the stronger of the two wherever
- * both apply. That one reads function words, so it knows three languages, needs
+ * both apply. That one reads function words, so it knows eight languages, needs
  * 25 of them before it will speak, and is answering a hard question -- *which
  * language is this?* This one answers an easy one: *is this even written in the
  * alphabet I asked for?* A model that was asked for English and replied in

@@ -268,7 +268,8 @@ re-released as 0.5.0. The rule it broke is the one in the table above.
 
 - Not a hallucination detector. It measures *shape*, never truth.
 - `REPETITION` does not work on Chinese, Japanese or Thai — a known, measured gap, not an oversight.
-- `LANG_MISMATCH` is a function-word heuristic covering `id`/`en`/`es`, and is unreliable under 25 words. `expectScript` is the stronger check wherever the alphabets differ.
+- `LANG_MISMATCH` is a function-word heuristic covering `id`/`en`/`es`/`pt`/`it`/`fr`/`de`/`nl`, and is unreliable under 25 words. `expectScript` is the stronger check wherever the alphabets differ.
+- `expectLang: 'es'` does not reliably catch Portuguese, Italian or French: its profile is built from function words all four share. Measured, and unfixable without a threshold change — see **[docs/detectors.md](docs/detectors.md#answering-in-the-wrong-language)**.
 - `PROMPT_ECHO` cannot tell a degenerate echo from a rewrite or translation — the difference is in what you asked for, not in the text.
 - `SCRIPT_MISMATCH` and `PROMPT_ECHO` do not run mid-stream by default: both measure a property of the whole response, and a mid-stream check reads a trailing window. `earlyDocumentChecks: true` opts in, with a measured false-positive risk — see **[docs/streaming.md](docs/streaming.md)**.
 - Tool *arguments* are measured only with `checkToolArguments: true`, non-streaming responses only.
