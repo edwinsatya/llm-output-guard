@@ -270,7 +270,7 @@ re-released as 0.5.0. The rule it broke is the one in the table above.
 - `REPETITION` does not work on Chinese, Japanese or Thai — a known, measured gap, not an oversight.
 - `LANG_MISMATCH` is a function-word heuristic covering `id`/`en`/`es`, and is unreliable under 25 words. `expectScript` is the stronger check wherever the alphabets differ.
 - `PROMPT_ECHO` cannot tell a degenerate echo from a rewrite or translation — the difference is in what you asked for, not in the text.
-- `SCRIPT_MISMATCH` and `PROMPT_ECHO` do not run mid-stream: both measure a property of the whole response, and a mid-stream check reads a trailing window.
+- `SCRIPT_MISMATCH` and `PROMPT_ECHO` do not run mid-stream by default: both measure a property of the whole response, and a mid-stream check reads a trailing window. `earlyDocumentChecks: true` opts in, with a measured false-positive risk — see **[docs/streaming.md](docs/streaming.md)**.
 - Tool *arguments* are measured only with `checkToolArguments: true`, non-streaming responses only.
 - `openai`'s `responses.stream()` helper is not wrapped; `create({ stream: true })` is.
 - Truncation from a missing full stop is weak evidence, scored 0.55 and deliberately left below the defaults. Lower `maxTruncation` to ~0.5 to catch it, and expect false positives.

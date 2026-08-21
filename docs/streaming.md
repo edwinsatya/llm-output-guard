@@ -88,3 +88,73 @@ const final = guard.end(finishReason); // full check, all detectors
 ---
 
 [← Back to the README](../README.md) · [Try the playground](https://edwinsatya.github.io/llm-output-guard/)
+
+## Judging the whole response, early
+
+`SCRIPT_MISMATCH` and `PROMPT_ECHO` are deferred to `end()` by default. Both
+measure a property of the whole response, and a mid-stream check reads a
+trailing window — so what a window would measure is the language of a window,
+not of the response.
+
+`earlyDocumentChecks: true` gives them the right span instead: the buffer so
+far, rather than the window.
+
+```ts
+const guarded = guardStream(model.textStream, {
+  ...presets.chat,
+  expectScript: 'latin',
+  earlyDocumentChecks: true,
+  onDegenerate: () => controller.abort(),
+});
+```
+
+**What you buy is tokens.** A model answering in the wrong language commits to
+it in its first sentence, so this aborts at around 600 characters instead of
+after the whole response is paid for.
+
+### Why it is off by default
+
+The buffer is a **prefix**, and a prefix over-reports both detectors, because a
+response that opens with a quotation in another script — or leaks the prompt
+before answering — is at its worst when the least of it has arrived. Measured
+on exactly those shapes:
+
+```
+                                                240   640  1040  1440   final
+opens with a Chinese quote, then English       1.00  0.42  0.26  0.19   0.186
+a long English preamble, then Chinese          1.00  0.66  0.39         0.359
+leaks the prompt, then answers at length       0.00  0.54  0.33  0.24   0.093
+```
+
+Every one of those is healthy, and every one reads as **totally degenerate** at
+240 characters — the guard's own warmup.
+
+So a prefix is only allowed to condemn a response it is entirely wrong about:
+
+- nothing is judged below **600 characters**, and
+- the bar is **0.9**, whatever threshold you configured. A lowered
+  `maxScriptMismatch` applies at `end()`, not to a prefix.
+
+Even then the worst healthy case above reads 0.66 against a bar of 0.9. That
+margin is 0.24, which is why this is opt-in and why `end()` remains the default:
+it catches all of these with no such risk.
+
+### What it costs
+
+Bounded, and deliberately so. The first version re-scanned the whole buffer on
+every check, taking a 32,000-character stream from 9.06 ms to **65.48 ms** — the
+quadratic cost `window` exists to prevent, reintroduced by a second span with no
+window of its own.
+
+Both detectors read only the first `maxSample` characters, so past that the
+score is frozen and re-checking cannot change it. The span is capped there,
+checks stop once it saturates, and until then they run on a doubling schedule:
+
+| stream | off | on |
+|---|---|---|
+| 2 KB | 1.21 ms | 1.12 ms |
+| 8 KB | 3.36 ms | 4.29 ms |
+| 32 KB | 8.99 ms | 10.46 ms |
+| 128 KB | 32.03 ms | 33.99 ms |
+
+A stream of any length gets about five of these checks, not one per check.

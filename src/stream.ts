@@ -94,7 +94,131 @@ const DEFERRED_TO_END: CheckOptions = {
   maxCompressibility: null,
 };
 
+/**
+ * Characters that must have arrived before a prefix is allowed to condemn a
+ * response, and the score it has to reach. Both are measured, not chosen.
+ *
+ * The problem is that a prefix score is not the document score. These
+ * detectors report a **share**, and a response that opens in one script and
+ * continues in another -- or leaks the prompt and then answers -- is at its
+ * worst exactly when the least of it has arrived. Measured on that shape:
+ *
+ *   opens with a Chinese quote, then answers in English (want latin)
+ *     240 chars 1.00   640 0.42   1040 0.26   1440 0.19   final 0.186
+ *   a long English preamble, then answers in Chinese (want han)
+ *     240 chars 1.00   640 0.66   1040 0.39            final 0.359
+ *   leaks the prompt, then answers at length
+ *     240 chars 0.00   640 0.54   1040 0.33   1440 0.24  final 0.093
+ *
+ * Every one of those is a healthy response, and every one reads as totally
+ * degenerate at 240 characters. So the floor is 600 rather than the guard's
+ * own 240 warmup, and the bar is 0.9 rather than whatever threshold the caller
+ * configured: a prefix is only allowed to prove the extreme case, where the
+ * whole buffer so far is in the wrong script or copied from the prompt.
+ *
+ * At those numbers the worst healthy case above reads 0.66 against a bar of
+ * 0.9. That margin is 0.24, which is the whole reason this is opt-in.
+ */
+const EARLY_DOCUMENT_MIN = 600;
+const EARLY_DOCUMENT_CERTAINTY = 0.9;
+
+/**
+ * The head of the buffer these detectors actually read, and the schedule on
+ * which they read it. Both exist because the naive version is quadratic.
+ *
+ * Measured before this: a 32,000-character stream cost 9.06ms with the feature
+ * off and **65.48ms** with it on, because every check re-scanned the whole
+ * buffer. That is the cost `window` exists to prevent, reintroduced by a
+ * second span that had no window of its own.
+ *
+ * Two facts make it cheap instead. Both detectors sample the *first*
+ * `maxSample` characters, so the span never needs to be longer than that -- and
+ * once the buffer passes it, the sample stops changing and the score is frozen,
+ * so any further check is provably re-computing a number that cannot move.
+ *
+ * So the buffer is capped at the sample size, checks stop once it saturates,
+ * and until then they run on a doubling schedule rather than on every check.
+ * The answer stabilises as the buffer grows, so looking less often costs
+ * nothing: a stream of any length gets about five of these, not one per check.
+ */
+const EARLY_DOCUMENT_SAMPLE = 8000;
+
+/**
+ * Everything except the document detectors, off.
+ *
+ * Those two are the only ones this can turn back on, and the only ones worth
+ * turning back on: both measure a property of the whole response rather than of
+ * a window, so both are meaningless against the trailing slice the other checks
+ * read and meaningful against the buffer so far. Everything else either belongs
+ * on the window (redundancy) or belongs at the end (`TRUNCATED`,
+ * `INVALID_JSON`, `TOO_SHORT`) for the reasons `DEFERRED_TO_END` gives.
+ *
+ * Expressed as an options overlay rather than as a list of codes, so a detector
+ * added later is off here until someone decides otherwise -- the safe
+ * direction, and the one that does not need this file edited to stay correct.
+ */
+const DOCUMENT_ONLY: CheckOptions = {
+  minLength: 0,
+  maxRepetition: null,
+  maxTailLoop: null,
+  maxCharTailLoop: null,
+  maxCompressibility: null,
+  maxTruncation: null,
+  expectJson: false,
+  expectLang: null,
+  finishReason: undefined,
+  maxScriptMismatch: EARLY_DOCUMENT_CERTAINTY,
+  maxPromptEcho: EARLY_DOCUMENT_CERTAINTY,
+};
+
+/**
+ * Fold an early document verdict into the window verdict for the same check.
+ *
+ * Scores are merged whether or not the document detectors failed, because
+ * `scores` carries the passing ones everywhere else in this package and a
+ * caller feeding `push()` into their metrics should see the same. Only
+ * `reasons` decides `ok`.
+ */
+function mergeEarly(windowVerdict: Verdict, document: Verdict | null): Verdict {
+  if (!document) return windowVerdict;
+  const reasons = [...windowVerdict.reasons, ...document.reasons];
+  return {
+    ...windowVerdict,
+    ok: reasons.length === 0,
+    reasons,
+    scores: { ...windowVerdict.scores, ...document.scores },
+    ...(document.modes || windowVerdict.modes
+      ? { modes: { ...windowVerdict.modes, ...document.modes } }
+      : {}),
+  };
+}
+
 export interface StreamGuardOptions extends CheckOptions {
+  /**
+   * Judge `SCRIPT_MISMATCH` and `PROMPT_ECHO` mid-stream, against the whole
+   * buffer rather than the trailing window. Default `false`.
+   *
+   * Both are deferred to `end()` by default because they measure the whole
+   * response, and a window measures the window. This reads the buffer instead,
+   * which is the right span -- but the buffer is a *prefix*, and a prefix
+   * over-reports both: a response that opens with a quotation in another
+   * script, or leaks the prompt before answering, is at its worst when the
+   * least of it has arrived.
+   *
+   * So a prefix is only allowed to condemn a response it is **entirely**
+   * wrong about: nothing is judged under 600 characters, and the bar is 0.9
+   * regardless of the threshold you configured. Even then, the worst healthy
+   * case measured here reads 0.66 at 640 characters.
+   *
+   * **What you buy is tokens.** A model answering in the wrong language commits
+   * to it in the first sentence, and this aborts at around 600 characters
+   * instead of at the end. **What you risk** is discarding a healthy response
+   * that happens to open in another script for longer than that.
+   *
+   * Off by default because this package treats a false positive as worse than
+   * a miss, and `end()` already catches every one of these with no such risk.
+   */
+  earlyDocumentChecks?: boolean;
   /**
    * Characters of *new* text between checks. Default 400.
    *
@@ -156,7 +280,27 @@ export interface StreamGuard {
  * nothing about your provider. It tells you; you decide.
  */
 export function createStreamGuard(options: StreamGuardOptions = {}): StreamGuard {
-  const { checkEvery = 400, warmup = 240, window = 2000, ...checkOptions } = options;
+  const {
+    checkEvery = 400,
+    warmup = 240,
+    window = 2000,
+    earlyDocumentChecks = false,
+    ...checkOptions
+  } = options;
+
+  /*
+   * Nothing to do unless a document detector is actually configured. Asked
+   * once, because the answer cannot change over the life of a stream, and
+   * because it keeps the per-check path free of work for the callers who have
+   * neither option set -- which is most of them.
+   */
+  const earlyDocument =
+    earlyDocumentChecks && Boolean(checkOptions.expectScript || checkOptions.prompt);
+
+  /** Buffer length at which the next document check is due, doubling each time. */
+  let nextDocumentAt = EARLY_DOCUMENT_MIN;
+  /** Set once the sample has saturated, after which the score cannot change. */
+  let documentSettled = false;
 
   let text = '';
   let sinceCheck = 0;
@@ -192,7 +336,22 @@ export function createStreamGuard(options: StreamGuardOptions = {}): StreamGuard
       // The tail, not the head -- the detectors' own `maxSample` takes the
       // first N characters, which for a stream is the part already judged.
       const recent = text.length > window ? text.slice(-window) : text;
-      return checkOutput(recent, { ...checkOptions, ...DEFERRED_TO_END });
+      const verdict = checkOutput(recent, { ...checkOptions, ...DEFERRED_TO_END });
+
+      /*
+       * The second span. The window is right for redundancy and wrong for the
+       * document detectors, so those read the head of the buffer instead --
+       * capped, scheduled, and stopped once the sample saturates. See
+       * `EARLY_DOCUMENT_SAMPLE` for why all three are needed.
+       */
+      if (!earlyDocument || documentSettled || text.length < nextDocumentAt) return verdict;
+
+      nextDocumentAt = text.length * 2;
+      const head =
+        text.length > EARLY_DOCUMENT_SAMPLE ? text.slice(0, EARLY_DOCUMENT_SAMPLE) : text;
+      if (head.length >= EARLY_DOCUMENT_SAMPLE) documentSettled = true;
+
+      return mergeEarly(verdict, checkOutput(head, { ...checkOptions, ...DOCUMENT_ONLY }));
     },
 
     end(finishReason?: string): Verdict {
