@@ -1,5 +1,247 @@
 # llm-output-guard
 
+## 1.6.0
+
+### Minor Changes
+
+- 4ecf094: `PROMPT_ECHO` now works from the adapters, via `checkPromptEcho: true`.
+
+  ```ts
+  const client = withOutputGuard(new OpenAI(), {
+    ...presets.chat,
+    checkPromptEcho: true,
+  });
+  ```
+
+  1.5.0 shipped the detector as a `checkOutput` option only, because a guard is
+  configured once when you wrap a client while the prompt changes on every call.
+  That left it **unreachable from the API the README leads with** — anyone using
+  `withOutputGuard` or `outputGuard` could not use it at all.
+
+  The fix is a switch rather than a value: the adapter reads the prompt out of each
+  request it is already forwarding. All three adapters, each reading its own
+  shape — `messages` for `chat.completions`, `instructions` plus `input` for
+  `responses`, `system` plus `messages` for Anthropic, and the spec's normalised
+  `params.prompt` for the AI SDK. Content is read whether it is a string or a list
+  of parts, and non-text parts contribute nothing.
+
+  **Prior assistant turns are deliberately excluded.** The failure being measured
+  is a model replaying its _input_. Including its own earlier answers would create
+  a false positive that grows with conversation length, because a model that keeps
+  its terminology consistent across a long conversation is doing its job. Nothing
+  is lost in coverage: a model that loses the turn boundary and replays the whole
+  transcript replays the system and user text too.
+
+  **An explicit `prompt` in the options wins**, so a caller with a fixed system
+  prompt who prefers to state it once is not overridden by what the adapter found.
+
+  Also fixed while wiring this: the tool-call branch of the streaming path was
+  reading the client-wide options rather than the per-call ones, so a
+  tool-calling stream would not have seen the prompt the rest of the call did.
+  That path was added in 1.5.0 and never shipped a wrong verdict, because nothing
+  was per-call until now.
+
+  Off by default. `dist/` behaviour is unchanged for any caller who does not set
+  the new option, and no threshold moved.
+
+- 0a05645: New CLI command: `llm-output-guard check`, which scores responses you already
+  have.
+
+  ```bash
+  npx llm-output-guard check reply.txt
+  npx llm-output-guard check logs/*.txt --json > scores.jsonl
+  cat responses.jsonl | npx llm-output-guard check --jsonl --json
+  ```
+
+  ## The loop was missing its first half
+
+  `calibrate` has asked for a week of logged scores since 0.4, and nothing in the
+  package produced them. You could derive thresholds from scores, and you could
+  get scores at runtime through `onVerdict` — but if you already had a directory
+  of captured responses, there was no way to score them without writing a script
+  first. A calibration step you have to prepare for is one you do not run.
+
+  The two commands now compose with no reshaping between them:
+
+  ```bash
+  npx llm-output-guard check logs/*.txt --json | npx llm-output-guard calibrate --fpr 0.001
+  ```
+
+  ## The exit code is the other half of the point
+
+  - **0** — everything passed
+  - **1** — something was judged degenerate
+  - **2** — the input could not be read, or the usage was wrong
+
+  Distinguishing 1 from 2 is deliberate: in CI, "it found something" and "it broke"
+  need different responses. That makes `check` an assertion you can drop into a
+  test job or an eval suite as-is:
+
+  ```bash
+  npx llm-output-guard check fixtures/*.txt --preset strictJson --quiet
+  ```
+
+  ## Reading whatever you already log
+
+  Under `--jsonl` the response text is dug out of each line as liberally as
+  `extractScores` digs out scores, and for the same reason. A bare string, an
+  obvious field name (`text`, `output`, `content`, `response`, `completion`,
+  `answer`), a raw OpenAI or Anthropic envelope, or any of those buried one level
+  down in a wider log record all work.
+
+  **Lines carrying no response are counted and reported, not scored as healthy.**
+  A logged tool-call turn has no assistant text, so it lands in that count rather
+  than putting an `EMPTY: 1` spike into a calibration run that describes your
+  agent's tool use instead of any degeneration — the same failure `tool-calls.ts`
+  exists to prevent at runtime.
+
+  ## Options
+
+  ```
+  --preset <name>  chat | strictJson | longForm | lenient (default chat)
+  --jsonl          read input as JSONL, one logged response per line
+  --json           emit a verdict per response as JSONL, for calibrate
+  --quiet          no per-response output; the exit code is the answer
+  ```
+
+  **Existing invocations are unchanged.** `llm-output-guard scores.jsonl` and
+  `llm-output-guard calibrate scores.jsonl` both still calibrate, with or without
+  the subcommand word — that has been the documented form since 0.4 and requiring
+  the word now would break it for every reader of an older README.
+
+- c4e8a22: New opt-in stream option: `earlyDocumentChecks`, which lets `SCRIPT_MISMATCH`
+  and `PROMPT_ECHO` judge a stream before it finishes.
+
+  ```ts
+  const guarded = guardStream(model.textStream, {
+    ...presets.chat,
+    expectScript: "latin",
+    earlyDocumentChecks: true,
+    onDegenerate: () => controller.abort(),
+  });
+  ```
+
+  Both detectors were deferred to `end()` because they measure a property of the
+  whole response and a mid-stream check reads a trailing _window_ — so what a
+  window measures is the language of a window. This gives them the right span
+  instead: the buffer so far. A model answering in the wrong language commits to
+  it in its first sentence, so the abort lands at around 600 characters rather
+  than after the whole response is paid for.
+
+  ## Why it is off by default, with the numbers
+
+  The buffer is a **prefix**, and a prefix over-reports both detectors. A response
+  that opens with a quotation in another script, or leaks the prompt before
+  answering, is at its worst when the least of it has arrived:
+
+  ```
+                                                  240   640  1040  1440   final
+  opens with a Chinese quote, then English       1.00  0.42  0.26  0.19   0.186
+  a long English preamble, then Chinese          1.00  0.66  0.39         0.359
+  leaks the prompt, then answers at length       0.00  0.54  0.33  0.24   0.093
+  ```
+
+  Every one of those is a healthy response, and every one reads as totally
+  degenerate at 240 characters — which is the guard's own warmup.
+
+  So a prefix may only condemn a response it is entirely wrong about: nothing is
+  judged below **600 characters**, and the bar is **0.9** regardless of the
+  threshold configured. A lowered `maxScriptMismatch` still applies at `end()`,
+  where the whole response is in scope.
+
+  Even so, the worst healthy case above reads 0.66 against a bar of 0.9 — a margin
+  of 0.24. That is thinner than this package usually accepts, `end()` already
+  catches all of these with no such risk, and the rule here is that a false
+  positive is worse than a miss. Hence opt-in.
+
+  ## The cost, which was the hard part
+
+  The obvious implementation is quadratic. Re-scanning the whole buffer on every
+  check took a 32,000-character stream from 9.06 ms to **65.48 ms** — precisely the
+  cost `window` exists to prevent, reintroduced by a second span that had no
+  window of its own.
+
+  Both detectors read only the first `maxSample` characters, so once the buffer
+  passes that the sample stops changing and the score is frozen; any further check
+  recomputes a number that cannot move. The span is therefore capped at the sample
+  size, checks stop once it saturates, and until then they run on a doubling
+  schedule rather than on every check:
+
+  | stream | off      | on       |
+  | ------ | -------- | -------- |
+  | 2 KB   | 1.21 ms  | 1.12 ms  |
+  | 8 KB   | 3.36 ms  | 4.29 ms  |
+  | 32 KB  | 8.99 ms  | 10.46 ms |
+  | 128 KB | 32.03 ms | 33.99 ms |
+
+  A stream of any length now gets about five of these checks. A test pins the
+  property rather than a timing, so the quadratic version cannot come back
+  unnoticed.
+
+  ## Also
+
+  Passing document scores are merged into the mid-stream verdict, not only failing
+  ones, so `scores` carries them the way it does everywhere else in this package
+  and a caller feeding `push()` into their metrics sees the same shape.
+
+  Off by default and inert unless `expectScript` or `prompt` is also set, so
+  nothing changes for an existing caller.
+
+- bafe251: `expectLang` grows from three languages to eight: `pt`, `it`, `fr`, `de` and
+  `nl` join `id`, `en` and `es`.
+
+  `SCRIPT_MISMATCH` covers every cross-alphabet case, which left the same-alphabet
+  half — the one that has to tell French from Portuguese — knowing three
+  languages, none of which are the ones most often confused with each other.
+
+  ## A profile is not a frequency list
+
+  The score is `(best - target) / best` across every profile, so a word that two
+  languages both own raises `target` as much as `best` and pushes the score toward
+  zero. Building a profile from a language's _commonest_ function words therefore
+  builds the worst possible profile: those are exactly the words its neighbours
+  share.
+
+  The new profiles are built from where neighbouring languages differ instead —
+  `não`/`no`, `com`/`con`, `em`/`en`, `uma`/`una`, `do`/`del` for Portuguese
+  against Spanish; `il`/`el`, `di`/`de`, `che`/`que`, `gli`, `più` for Italian;
+  `les`, `des`, `du`, `dans`, `avec`, `cette` for French.
+
+  Measured over two unrelated sample sets per language: every language scores
+  **0.000** against itself, and every expectation other than `es` scores **0.70 or
+  better** against every other language.
+
+  ## `expectLang: 'es'` is the weak expectation, and it stays that way
+
+  The `es` profile predates that rule and is built from precisely the generic
+  Romance words it warns against — `de`, `que`, `por`, `para`, `no`, `se`, `como`
+  — which hit Portuguese, Italian and French text nearly as hard as they hit
+  Spanish. Across the two sample sets:
+
+  ```
+  pt 0.36 / 0.50     it 0.83 / 0.33     fr 0.30 / 0.33
+  ```
+
+  Those sit under the 0.6 default, so **`expectLang: 'es'` does not reliably catch
+  Portuguese, Italian or French**, and `expectScript` cannot help because all four
+  share the Latin alphabet. It still catches English, Indonesian, German and Dutch
+  comfortably.
+
+  Re-choosing the `es` profile would fix it and is a behaviour change, so it waits
+  for a major. The limitation is documented in the README, in `docs/detectors.md`,
+  and asserted in tests so it cannot be mistaken for a bug later or quietly get
+  worse.
+
+  ## The regression that did not happen
+
+  Adding a profile adds a candidate for `best`, so a new language that out-scored
+  `en` on English text would have started failing healthy English responses. All
+  three original languages still score 0.000 on their own text across both sample
+  sets, and there is a test that says so.
+
+  `supportedLanguages` now reads `['id', 'en', 'es', 'pt', 'it', 'fr', 'de', 'nl']`.
+  Still opt-in, still absent from every preset.
+
 ## 1.5.0
 
 ### Minor Changes
