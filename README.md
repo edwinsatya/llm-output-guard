@@ -95,8 +95,10 @@ Adapters for the **OpenAI SDK** (both `chat.completions` and `responses`),
 protocol: Groq, Together, OpenRouter, Fireworks, vLLM, Ollama.
 
 On a stream this **cancels the HTTP request** the moment a loop is detectable, so
-you stop paying for the rest of it. Running agents? Add `checkToolArguments: true`
-to measure the arguments as well as the prose beside them.
+you stop paying for the rest of it. Two switches worth knowing:
+`checkToolArguments: true` measures the arguments a model passes to a tool, and
+`checkPromptEcho: true` reads the prompt out of each request so a model that
+replays it instead of answering is caught.
 
 **[docs/adapters.md](docs/adapters.md)** · **[docs/streaming.md](docs/streaming.md)**
 
@@ -154,6 +156,8 @@ length:
 
 ```ts
 checkOutput(raw, { ...presets.chat, prompt });
+// or, from an adapter, which reads the prompt out of the request itself:
+withOutputGuard(new OpenAI(), { ...presets.chat, checkPromptEcho: true });
 ```
 
 Not for rewrite, translate or summarise endpoints, where copying the input is

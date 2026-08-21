@@ -64,6 +64,16 @@ export interface Surface {
    * than by returning a misleading empty array.
    */
   toolArguments?(value: object): unknown[];
+  /**
+   * The prompt that produced a response, read from the request the caller
+   * passed to `create`.
+   *
+   * Optional for the same reason as `toolArguments`: a surface that cannot
+   * reach it opts out by omission rather than by returning an empty string,
+   * which the detector would read as "no prompt" and abstain on anyway, but
+   * silently.
+   */
+  promptFrom?(request: unknown): string | undefined;
 }
 
 export interface GuardedPath {
@@ -91,7 +101,27 @@ export function guardClient<T extends object>(
   paths: readonly GuardedPath[],
   options: ProxyGuardOptions = {},
 ): T {
-  const { onDegenerate = 'throw', onVerdict, checkToolArguments = false, ...guardOptions } = options;
+  const {
+    onDegenerate = 'throw',
+    onVerdict,
+    checkToolArguments = false,
+    checkPromptEcho = false,
+    ...guardOptions
+  } = options;
+
+  /**
+   * The guard options for one call, with the prompt folded in when asked for.
+   *
+   * Per call rather than per client, because that is what a prompt is. An
+   * explicit `prompt` in the options the caller passed to `withOutputGuard`
+   * wins, so a caller who has a fixed system prompt and prefers to state it
+   * once is not overridden by what the adapter found.
+   */
+  const optionsFor = (surface: Surface, request: unknown): typeof guardOptions => {
+    if (!checkPromptEcho || !surface.promptFrom || guardOptions.prompt) return guardOptions;
+    const prompt = surface.promptFrom(request);
+    return prompt ? { ...guardOptions, prompt } : guardOptions;
+  };
 
   const act = (verdict: Verdict, streaming: boolean): void => {
     onVerdict?.(verdict, { streaming });
@@ -100,7 +130,8 @@ export function guardClient<T extends object>(
   };
 
   /** Non-streaming: check the finished text, including its stop reason. */
-  const guardCompletion = (surface: Surface, completion: object): object => {
+  const guardCompletion = (surface: Surface, completion: object, request: unknown): object => {
+    const callOptions = optionsFor(surface, request);
     /*
      * A tool call is an answer, just not a textual one. Judging its (absent)
      * text as a response would fail every tool-calling turn on `EMPTY` -- see
@@ -108,7 +139,7 @@ export function guardClient<T extends object>(
      * question rather than the detector being wrong.
      */
     if (surface.hasToolCalls(completion)) {
-      const preamble = checkPreamble(surface.text(completion), guardOptions);
+      const preamble = checkPreamble(surface.text(completion), callOptions);
       /*
        * Off by default, and read through the surface rather than here, because
        * where the arguments live is the one part of this that is provider
@@ -117,7 +148,7 @@ export function guardClient<T extends object>(
        */
       const args =
         checkToolArguments && surface.toolArguments
-          ? checkArguments(surface.toolArguments(completion), guardOptions)
+          ? checkArguments(surface.toolArguments(completion), callOptions)
           : null;
       const verdict = mergeVerdicts(preamble, args);
       if (verdict) act(verdict, false);
@@ -126,8 +157,8 @@ export function guardClient<T extends object>(
 
     act(
       checkOutput(surface.text(completion), {
-        ...guardOptions,
-        finishReason: surface.finishReason(completion) ?? guardOptions.finishReason,
+        ...callOptions,
+        finishReason: surface.finishReason(completion) ?? callOptions.finishReason,
       }),
       false,
     );
@@ -141,8 +172,15 @@ export function guardClient<T extends object>(
    * has been generated and paid for buys nothing but a shorter answer. The
    * saving is entirely in the chunks the provider is never asked to produce.
    */
-  const guardStream = (surface: Surface, stream: StreamLike): StreamLike => {
-    const guard = createStreamGuard(guardOptions);
+  const guardStream = (surface: Surface, stream: StreamLike, request: unknown): StreamLike => {
+    /*
+     * The prompt reaches `end()` and not the mid-stream checks. `stream.ts`
+     * clears `prompt` for every check before the last, because the score is a
+     * share of the whole output and a trailing window measures the share of
+     * that window.
+     */
+    const callOptions = optionsFor(surface, request);
+    const guard = createStreamGuard(callOptions);
 
     async function* guarded(): AsyncGenerator<unknown, void, undefined> {
       let fired = false;
@@ -194,7 +232,7 @@ export function guardClient<T extends object>(
        * agent's tool use rather than any degeneration.
        */
       if (sawToolCall) {
-        const verdict = checkPreamble(guard.text, guardOptions);
+        const verdict = checkPreamble(guard.text, callOptions);
         if (verdict) onVerdict?.(verdict, { streaming: true });
         return;
       }
@@ -240,8 +278,8 @@ export function guardClient<T extends object>(
               Promise.resolve(target as PromiseLike<unknown>)
                 .then((value) =>
                   isStream(value)
-                    ? guardStream(surface, value)
-                    : guardCompletion(surface, value as object),
+                    ? guardStream(surface, value, args[0])
+                    : guardCompletion(surface, value as object, args[0]),
                 )
                 .then(onOk as never, onErr as never);
           }

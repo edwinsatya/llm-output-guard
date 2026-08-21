@@ -80,4 +80,18 @@ export interface AdapterGuardOptions {
    * measure mid-stream.
    */
   checkToolArguments?: boolean;
+  /**
+   * Check the response against the prompt that produced it, so a model that
+   * replays your prompt instead of answering is caught. Default `false`.
+   *
+   * `PROMPT_ECHO` needs the prompt, and a guard is configured once when you
+   * wrap the client while the prompt changes on every call -- so this is a
+   * switch rather than a value. Turn it on and the adapter reads the prompt out
+   * of each request it is already forwarding.
+   *
+   * **Do not enable this on a rewrite, translate, summarise or extract
+   * endpoint.** Copying from the input is the job on those, so a correct answer
+   * scores high and the detector measures the task rather than a failure.
+   */
+  checkPromptEcho?: boolean;
 }

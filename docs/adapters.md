@@ -285,3 +285,46 @@ mid-stream.
 
 Off by default. Switching it on can only make a response fail that previously
 passed, so it is opt-in like every other behaviour change in this package.
+
+## Prompt echo
+
+`PROMPT_ECHO` catches a model that replays your prompt instead of answering it.
+It needs the prompt, and a guard is configured once when you wrap the client
+while the prompt changes on every call — so this is a switch rather than a
+value, and the adapter reads the prompt out of each request it is already
+forwarding.
+
+```ts
+const client = withOutputGuard(new OpenAI(), {
+  ...presets.chat,
+  checkPromptEcho: true,
+});
+```
+
+Works on all three adapters, and each reads its own request shape:
+`messages` for `chat.completions`, `instructions` plus `input` for `responses`,
+`system` plus `messages` for Anthropic, and the spec's normalised `params.prompt`
+for the AI SDK. Content is read whether it is a plain string or a list of parts;
+non-text parts (images, audio, files) contribute nothing, which is correct — they
+are not text the model could echo back.
+
+**Prior assistant turns are excluded.** The failure being measured is a model
+replaying its *input*, and a model that keeps its terminology consistent across a
+long conversation is doing its job. Counting its own earlier answers would make
+that look worse the longer the conversation ran. Nothing is lost: a model that
+loses the turn boundary and replays the whole transcript replays the system and
+user text too.
+
+**An explicit `prompt` in the options wins.** If you have a fixed system prompt
+and prefer to state it once when wrapping the client, the adapter does not
+override it.
+
+**On a stream the check runs at the end**, not on the mid-stream windows,
+because the score is a share of the whole output and a trailing window measures
+the share of that window. See
+[docs/detectors.md](./detectors.md#returning-the-prompt-instead-of-an-answer)
+for the numbers.
+
+> **Do not enable this on a rewrite, translate, summarise or extract endpoint.**
+> Copying from the input is the job on those, so a correct answer scores high and
+> the detector measures the task rather than a failure.

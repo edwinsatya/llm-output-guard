@@ -15,6 +15,7 @@ import { checkOutput, DegenerateOutputError } from './check.js';
 import { createStreamGuard } from './stream.js';
 import { checkPreamble } from './internal/tool-calls.js';
 import { checkArguments, mergeVerdicts } from './internal/tool-arguments.js';
+import { promptFromMessages } from './internal/prompt-text.js';
 
 /** `'stop' | 'length' | ...` in older specs, `{ unified, raw }` in v4. */
 type FinishReasonLike = string | { unified?: string; raw?: string } | null | undefined;
@@ -48,6 +49,14 @@ interface StreamPart {
  * positive this guards against.
  */
 const isToolPart = (part: StreamPart): boolean => part.type.startsWith('tool-');
+
+/**
+ * The call parameters the middleware is handed. Only `prompt` is read, and it
+ * is the spec's normalised message list rather than anything provider shaped.
+ */
+interface ParamsLike {
+  prompt?: unknown;
+}
 
 interface GenerateResultLike {
   content?: StreamPart[];
@@ -91,7 +100,28 @@ export interface OutputGuardOptions extends StreamGuardOptions, AdapterGuardOpti
  * than letting the model run to `max_tokens` on your budget.
  */
 export function outputGuard(options: OutputGuardOptions = {}) {
-  const { onDegenerate = 'throw', onVerdict, checkToolArguments = false, ...guardOptions } = options;
+  const {
+    onDegenerate = 'throw',
+    onVerdict,
+    checkToolArguments = false,
+    checkPromptEcho = false,
+    ...guardOptions
+  } = options;
+
+  /**
+   * The guard options for one call, with the prompt folded in when asked for.
+   *
+   * The middleware is handed `params` on both hooks, and `params.prompt` is the
+   * spec's normalised message list -- the one shape that is the same across
+   * every `ai` major in the peer range. An explicit `prompt` in the options
+   * wins, so a caller who prefers to state a fixed system prompt once is not
+   * overridden by what the adapter found.
+   */
+  const optionsFor = (params: ParamsLike | undefined): typeof guardOptions => {
+    if (!checkPromptEcho || guardOptions.prompt) return guardOptions;
+    const prompt = promptFromMessages(params?.prompt);
+    return prompt ? { ...guardOptions, prompt } : guardOptions;
+  };
 
   const act = (verdict: Verdict, streaming: boolean): void => {
     onVerdict?.(verdict, { streaming });
@@ -123,10 +153,13 @@ export function outputGuard(options: OutputGuardOptions = {}) {
      */
     async wrapGenerate<T extends GenerateResultLike>({
       doGenerate,
+      params,
     }: {
       doGenerate: () => PromiseLike<T>;
+      params?: ParamsLike;
     }): Promise<T> {
       const result = await doGenerate();
+      const callOptions = optionsFor(params);
       const content = result.content ?? [];
       const text = content
         .filter((part) => part.type === 'text')
@@ -140,7 +173,7 @@ export function outputGuard(options: OutputGuardOptions = {}) {
        * the wrong question rather than the detector being wrong.
        */
       if (content.some(isToolPart)) {
-        const preamble = checkPreamble(text, guardOptions);
+        const preamble = checkPreamble(text, callOptions);
         /*
          * Only `tool-call` parts, not every `tool-` prefixed one: the
          * `tool-input-start` / `-delta` / `-end` parts are streaming fragments
@@ -152,7 +185,7 @@ export function outputGuard(options: OutputGuardOptions = {}) {
               content
                 .filter((part) => part.type === 'tool-call')
                 .map((part) => part.input ?? part.args),
-              guardOptions,
+              callOptions,
             )
           : null;
         const verdict = mergeVerdicts(preamble, args);
@@ -162,8 +195,8 @@ export function outputGuard(options: OutputGuardOptions = {}) {
 
       act(
         checkOutput(text, {
-          ...guardOptions,
-          finishReason: finishReasonOf(result.finishReason) ?? guardOptions.finishReason,
+          ...callOptions,
+          finishReason: finishReasonOf(result.finishReason) ?? callOptions.finishReason,
         }),
         false,
       );
@@ -173,11 +206,18 @@ export function outputGuard(options: OutputGuardOptions = {}) {
 
     async wrapStream<T extends StreamResultLike>({
       doStream,
+      params,
     }: {
       doStream: () => PromiseLike<T>;
+      params?: ParamsLike;
     }): Promise<T> {
       const result = await doStream();
-      const guard = createStreamGuard(guardOptions);
+      /*
+       * The prompt reaches `end()` and not the mid-stream checks: `stream.ts`
+       * clears it for every check before the last, because the score is a share
+       * of the whole output and a window measures the share of that window.
+       */
+      const guard = createStreamGuard(optionsFor(params));
       let fired = false;
       let sawToolCall = false;
       let finishReason: FinishReasonLike;

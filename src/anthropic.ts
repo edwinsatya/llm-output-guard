@@ -16,6 +16,7 @@ import type { StreamGuardOptions } from './stream.js';
 import type { AdapterGuardOptions, DegenerateAction } from './internal/adapter-options.js';
 import type { GuardedPath, Surface } from './internal/proxy-guard.js';
 import { guardClient } from './internal/proxy-guard.js';
+import { promptFromMessages, withSystem } from './internal/prompt-text.js';
 
 export type { DegenerateAction };
 
@@ -120,6 +121,15 @@ const MESSAGES: Surface = {
    * into preamble mode -- including the server tools, whose inputs are
    * model-generated in the same way and can loop in the same way.
    */
+  /*
+   * `system` sits beside `messages` rather than inside it, and is either a
+   * string or a list of blocks depending on whether the caller used caching.
+   */
+  promptFrom: (request) => {
+    const req = request as { system?: unknown; messages?: unknown } | undefined;
+    return withSystem(req?.system, promptFromMessages(req?.messages)) || undefined;
+  },
+
   toolArguments: (value) =>
     ((value as MessageLike).content ?? []).filter(isToolBlock).map((block) => block.input),
 

@@ -12,6 +12,7 @@ import type { StreamGuardOptions } from './stream.js';
 import type { AdapterGuardOptions, DegenerateAction } from './internal/adapter-options.js';
 import type { GuardedPath, Surface } from './internal/proxy-guard.js';
 import { guardClient } from './internal/proxy-guard.js';
+import { promptFromMessages, withSystem } from './internal/prompt-text.js';
 
 export type { DegenerateAction };
 
@@ -134,6 +135,9 @@ const CHAT_COMPLETIONS: Surface = {
     };
   },
 
+  promptFrom: (request) =>
+    promptFromMessages((request as { messages?: unknown } | undefined)?.messages) || undefined,
+
   toolArguments: (value) =>
     ((value as CompletionLike).choices ?? []).flatMap((choice) => [
       ...(choice.message?.tool_calls ?? []).map((call) => call?.function?.arguments),
@@ -175,6 +179,16 @@ const RESPONSES: Surface = {
    * item that is a tool call but carries no arguments contributes `undefined`,
    * which `argumentsToText` turns into the empty string and the check skips.
    */
+  /*
+   * This API splits the prompt in two: `instructions` is the system prompt and
+   * `input` is the conversation, which may be a bare string rather than a list.
+   */
+  promptFrom: (request) => {
+    const req = request as { instructions?: unknown; input?: unknown } | undefined;
+    const input = typeof req?.input === 'string' ? req.input : promptFromMessages(req?.input);
+    return withSystem(req?.instructions, input) || undefined;
+  },
+
   toolArguments: (value) =>
     ((value as ResponseLike).output ?? []).filter(isToolCallItem).map((item) => item.arguments),
 
