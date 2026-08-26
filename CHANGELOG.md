@@ -1,5 +1,89 @@
 # llm-output-guard
 
+## 1.8.0
+
+### Minor Changes
+
+- New adapter: `llm-output-guard/google`, for the `@google/genai` Gemini SDK.
+
+  ```ts
+  import { GoogleGenAI } from "@google/genai";
+  import { withOutputGuard } from "llm-output-guard/google";
+
+  const ai = withOutputGuard(new GoogleGenAI({ apiKey }), {
+    ...presets.chat,
+    onDegenerate: "abort",
+  });
+  ```
+
+  `models.generateContent` and `models.generateContentStream` are both guarded by
+  that one call. `chats` is not, and deliberately: `chats.create()` returns a
+  `Chat` holding its own history, so guarding it means deciding what a degenerate
+  turn does to history already appended — left plainly unguarded rather than
+  half-done, on the same reasoning that leaves `messages.stream()` alone.
+
+  **Cancelling the stream needed a different mechanism.** The OpenAI and Anthropic
+  SDKs hand back a `Stream` carrying the `AbortController` that owns the
+  connection, so the guard reaches the transport through what it was given.
+  `generateContentStream` resolves to a bare `AsyncGenerator`. There is nothing on
+  it to abort, and ending our own iteration would leave the model generating — and
+  billing — while we looked away. So the handle goes _into_ the request as
+  `config.abortSignal`, which is what reaches `fetch`. The request object is cloned
+  rather than mutated, and a signal you supplied yourself keeps working: ours
+  follows yours rather than replacing it. Verified against a real client at
+  1.0.0, 1.9.0, 2.0.0 and 2.19.0, cancelling at 11 of 90 chunks.
+
+  Two things are read differently here than elsewhere:
+
+  - **Thought summaries are not the answer.** Gemini carries thinking in the same
+    `text` field as the answer, flagged `thought: true`, so that flag is the only
+    thing separating them. Measured as answer text, reasoning would raise every
+    repetition score on every thinking-enabled response.
+  - **Only the first candidate is judged.** `candidateCount` above 1 asks for
+    alternatives to one question and one of them gets used. Concatenating them
+    would measure a document nobody receives, and measure it wrongly in one
+    direction: two good answers to one question share subject, vocabulary and often
+    structure, so the more consistent the model was the higher its repetition score
+    would climb.
+
+  `MAX_TOKENS` maps to `TRUNCATED`. Gemini's content stops — `SAFETY`,
+  `RECITATION`, `BLOCKLIST`, `PROHIBITED_CONTENT`, `SPII` — deliberately do not:
+  each is a decision about what the model may say rather than the model losing the
+  thread, and reading one as truncation would discard the response and spend a
+  retry earning the identical stop again.
+
+  `@google/genai` is an optional peer, declared `>=1.0.0 <3.0.0`.
+
+### Patch Changes
+
+- `.catch()` and `.finally()` on a guarded call ran no check at all.
+
+  ```ts
+  // 1.7.0 and earlier: this response was never checked
+  const completion = await client.chat.completions
+    .create(params)
+    .catch(handleError);
+  ```
+
+  The adapters wrap `create`'s returned `APIPromise` in a proxy that intercepts
+  `then`. Everything else fell through to `Reflect.get` and came back bound to the
+  **unguarded** promise — and `catch` and `finally` are both defined in terms of
+  the `then` of whatever they are called on, so they awaited the raw response and
+  returned it unchecked.
+
+  Affects `./openai` and `./anthropic` from 1.0.0. Neither throws, warns, nor
+  reports to `onVerdict` on that path, which is the shape of the problem: a guard
+  you believe in and do not have, reachable through the most ordinary error
+  handling there is.
+
+  Both are now intercepted. The checked result is also memoised, so however many
+  handlers attach, the check runs once — `await p` after `p.catch(fn)` no longer
+  reports the same response to `onVerdict` twice, and on a stream no longer builds
+  two guarded generators over one connection.
+
+  Found while writing the Gemini adapter's tests, and pinned by regression tests in
+  both that suite and the OpenAI one.
+
 ## 1.7.0
 
 ### Minor Changes
