@@ -1,6 +1,10 @@
 {
   "name": "llm-output-guard",
   "version": "1.7.0",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/edwinsatya"
+  },
   "description": "Detect degenerate LLM output that arrives with a 200 OK. Zero dependencies, deterministic, composes with any retry or fallback layer.",
   "keywords": [
     "llm",
