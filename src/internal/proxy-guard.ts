@@ -1,12 +1,13 @@
 /**
- * The client-wrapping machinery behind `./openai` and `./anthropic`.
+ * The client-wrapping machinery behind `./openai`, `./anthropic` and
+ * `./google`.
  *
- * Both SDKs are the same shape where it counts: a resource tree with a `create`
- * at the end of it, returning an `APIPromise extends Promise` for a single
- * response or a `Stream` carrying an `AbortController` for a streamed one. The
- * guarding is therefore identical, and only three things differ between
- * providers -- where the text lives, what a tool call looks like, and how a stop
- * reason is spelled. Those are a {@link Surface}; everything else is here.
+ * The SDKs are the same shape where it counts: a resource tree with a method at
+ * the end of it, returning a promise for a single response or an async iterable
+ * for a streamed one. The guarding is therefore identical, and what differs
+ * between providers -- where the text lives, what a tool call looks like, how a
+ * stop reason is spelled, and whether a stream can be cancelled by what it
+ * handed you -- is a {@link Surface}. Everything else is here.
  *
  * Written once because the tricky parts are not the parts that vary. Proxying an
  * `APIPromise` without breaking `.withResponse()`, adopting it as a thenable so
@@ -31,10 +32,13 @@ import { checkArguments, mergeVerdicts } from './tool-arguments.js';
 /**
  * An SDK stream, reduced to what this needs.
  *
- * `controller` is the load-bearing part. Both SDKs register an `abort` listener
- * that calls `reader.cancel()` on the response body, so aborting it closes the
- * HTTP connection rather than merely ending our iteration -- which is the
- * difference between not being billed and being billed while looking away.
+ * `controller` is the load-bearing part where it exists. The OpenAI and
+ * Anthropic SDKs register an `abort` listener that calls `reader.cancel()` on
+ * the response body, so aborting it closes the HTTP connection rather than
+ * merely ending our iteration -- which is the difference between not being
+ * billed and being billed while looking away. It is optional because
+ * `@google/genai` returns a bare `AsyncGenerator` with no such handle; that
+ * case reaches the transport through {@link Surface.abortable} instead.
  */
 export interface StreamLike extends AsyncIterable<unknown> {
   controller?: { abort(reason?: unknown): void };
@@ -74,6 +78,17 @@ export interface Surface {
    * silently.
    */
   promptFrom?(request: unknown): string | undefined;
+  /**
+   * Attach a cancellation handle to an outgoing request, for a provider whose
+   * stream carries no `controller` of its own.
+   *
+   * Returns the arguments to call with -- a *copy*, since they belong to the
+   * caller -- and the abort to fire when a stream is cut short. Optional, and
+   * omitted by every surface whose SDK hands back something abortable, which
+   * is the better arrangement where it is available: a handle taken from the
+   * stream cannot be out of step with the stream.
+   */
+  abortable?(args: readonly unknown[]): { args: unknown[]; abort: () => void } | undefined;
 }
 
 export interface GuardedPath {
@@ -172,7 +187,12 @@ export function guardClient<T extends object>(
    * has been generated and paid for buys nothing but a shorter answer. The
    * saving is entirely in the chunks the provider is never asked to produce.
    */
-  const guardStream = (surface: Surface, stream: StreamLike, request: unknown): StreamLike => {
+  const guardStream = (
+    surface: Surface,
+    stream: StreamLike,
+    request: unknown,
+    abort?: () => void,
+  ): StreamLike => {
     /*
      * The prompt reaches `end()` and not the mid-stream checks. `stream.ts`
      * clears `prompt` for every check before the last, because the score is a
@@ -216,6 +236,9 @@ export function guardClient<T extends object>(
          * anyone iterates.
          */
         stream.controller?.abort();
+        // The same reach, for a provider that had to be handed the handle
+        // rather than hand us one. Exactly one of these two exists per surface.
+        abort?.();
         if (onDegenerate === 'throw') throw new DegenerateOutputError(verdict);
         return;
       }
@@ -253,8 +276,38 @@ export function guardClient<T extends object>(
 
   const wrapCreate = (create: (...args: unknown[]) => unknown, surface: Surface) =>
     function (this: unknown, ...args: unknown[]) {
-      const result = create.apply(this, args);
+      /*
+       * Before the call, because the handle has to be in the request that goes
+       * out. A surface without `abortable` is not charged for this.
+       */
+      const prepared = surface.abortable?.(args);
+      const callArgs = prepared?.args ?? args;
+      const result = create.apply(this, callArgs);
       if (!result || typeof (result as PromiseLike<unknown>).then !== 'function') return result;
+
+      /*
+       * The checked response, computed once however many handlers attach.
+       *
+       * Memoised rather than recomputed per handler because the check is not
+       * free of consequence: running it twice would report the same response to
+       * `onVerdict` twice, and on a stream would build two guarded generators
+       * over one connection. `await p` after `p.catch(fn)` is ordinary code,
+       * and it should see one check.
+       *
+       * `Promise.resolve` here, not `Promise.prototype.then.call`. `APIPromise`
+       * extends `Promise` with a constructor that takes a client and a response
+       * rather than an executor, so `then`'s species construction tries to
+       * build one with an executor and dies with "Promise resolve or reject
+       * function is not callable". Adopting it as a thenable calls its own
+       * `then`, which is the one `await` uses and the one that works.
+       */
+      let checked: Promise<unknown> | undefined;
+      const guarded = () =>
+        (checked ??= Promise.resolve(result as PromiseLike<unknown>).then((value) =>
+          isStream(value)
+            ? guardStream(surface, value, callArgs[0], prepared?.abort)
+            : guardCompletion(surface, value as object, callArgs[0]),
+        ));
 
       /*
        * Both SDKs return an `APIPromise`, not a plain promise: it carries
@@ -264,24 +317,25 @@ export function guardClient<T extends object>(
        */
       return new Proxy(result as object, {
         get(target, prop, receiver) {
+          /*
+           * `catch` and `finally` are intercepted, and not as a courtesy.
+           * Falling through to the target's own would hand back a method bound
+           * to the *unguarded* promise, and both are defined in terms of the
+           * `then` of whatever they are called on -- so `create(...).catch(fn)`
+           * would await the raw response and never run a check. A guard that
+           * silently does not run is the failure this package is about, and it
+           * would have been reachable through the most ordinary error handling
+           * there is.
+           */
           if (prop === 'then') {
-            /*
-             * `Promise.resolve` here, not `Promise.prototype.then.call`.
-             * `APIPromise` extends `Promise` with a constructor that takes a
-             * client and a response rather than an executor, so `then`'s
-             * species construction tries to build one with an executor and
-             * dies with "Promise resolve or reject function is not callable".
-             * Adopting it as a thenable calls its own `then`, which is the one
-             * `await` uses and the one that works.
-             */
             return (onOk?: (v: unknown) => unknown, onErr?: (e: unknown) => unknown) =>
-              Promise.resolve(target as PromiseLike<unknown>)
-                .then((value) =>
-                  isStream(value)
-                    ? guardStream(surface, value, args[0])
-                    : guardCompletion(surface, value as object, args[0]),
-                )
-                .then(onOk as never, onErr as never);
+              guarded().then(onOk as never, onErr as never);
+          }
+          if (prop === 'catch') {
+            return (onErr?: (e: unknown) => unknown) => guarded().catch(onErr as never);
+          }
+          if (prop === 'finally') {
+            return (onFinally?: () => void) => guarded().finally(onFinally as never);
           }
           const value = Reflect.get(target, prop, receiver);
           return typeof value === 'function' ? value.bind(target) : value;

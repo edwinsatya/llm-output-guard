@@ -353,6 +353,136 @@ const clientWith = (fetchImpl, options) =>
 }
 `;
 
+
+const GOOGLE_PROBE_TS = `
+import { GoogleGenAI } from '@google/genai';
+import { withOutputGuard, type OutputGuardOptions } from 'llm-output-guard/google';
+import { presets, type Verdict } from 'llm-output-guard';
+
+export const client = withOutputGuard(new GoogleGenAI({ apiKey: 'x' }), {
+  ...presets.chat,
+  onDegenerate: 'abort',
+});
+
+const options: OutputGuardOptions = {
+  ...presets.chat,
+  onDegenerate: 'ignore',
+  onVerdict: (verdict: Verdict, context: { streaming: boolean }) =>
+    void [verdict.ok, context.streaming, verdict.modes],
+};
+export const guarded = withOutputGuard(new GoogleGenAI({ apiKey: 'x' }), options);
+`;
+
+/**
+ * Gemini's probe cannot be shared with the other two, and not only because the
+ * wire format differs.
+ *
+ * \`@google/genai\` takes no \`fetch\` option, so the transport is stubbed
+ * globally rather than injected. And \`generateContentStream\` resolves to a
+ * bare \`AsyncGenerator\` with no controller on it, so the adapter cancels by
+ * putting an \`abortSignal\` into the request -- which means this probe is the
+ * only one where the assertion below is really about the SDK still forwarding
+ * that signal to \`fetch\`. If a future version stops doing so, the guard would
+ * go on reporting while quietly no longer stopping the billing, and this is
+ * where that gets caught.
+ */
+const GOOGLE_PROBE_MJS = `
+import { GoogleGenAI } from '@google/genai';
+import { withOutputGuard } from 'llm-output-guard/google';
+import assert from 'node:assert/strict';
+
+const HEALTHY =
+  'Redis pub/sub is the right primitive here. Each server subscribes to the room ' +
+  'channel and publishes moves to it, so fan-out no longer depends on which instance ' +
+  'a given socket happens to land on. The tradeoff is at-most-once delivery, so a ' +
+  'client reconnecting mid-game refetches state rather than replaying it.';
+const LOOPING = 'Your strongest area is TypeScript. ' + 'You should add tests to this repo. '.repeat(60);
+
+const body = (text, finishReason) => ({
+  candidates: [{ content: { role: 'model', parts: text ? [{ text }] : [] }, finishReason }],
+});
+
+function transport(text) {
+  const chunks = [];
+  for (let i = 0; i < text.length; i += 24) chunks.push(body(text.slice(i, i + 24), null));
+  chunks.push(body('', 'STOP'));
+  const state = { sent: 0, total: chunks.length, cancelled: false };
+
+  const fetchImpl = async (url, init) => {
+    const href = String(url && url.url ? url.url : url);
+    if (!href.includes('streamGenerateContent')) {
+      state.sent = state.total;
+      return new Response(JSON.stringify(body(text, 'STOP')), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      });
+    }
+    let index = 0;
+    const stream = new ReadableStream({
+      start(controller) {
+        init?.signal?.addEventListener('abort', () => {
+          state.cancelled = true;
+          try { controller.error(new DOMException('aborted', 'AbortError')); } catch {}
+        }, { once: true });
+      },
+      pull(controller) {
+        if (index >= chunks.length) return controller.close();
+        state.sent += 1;
+        controller.enqueue(new TextEncoder().encode('data: ' + JSON.stringify(chunks[index++]) + '\\r\\n\\r\\n'));
+      },
+      cancel() { state.cancelled = true; },
+    });
+    return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  };
+
+  return { state, fetchImpl };
+}
+
+const clientWith = (fetchImpl, options) => {
+  globalThis.fetch = fetchImpl;
+  return withOutputGuard(new GoogleGenAI({ apiKey: 'x' }), options);
+};
+
+const params = { model: 'gemini-2.5-flash', contents: 'hi' };
+
+// non-streaming: a loop is caught and thrown
+{
+  const { fetchImpl } = transport(LOOPING);
+  const client = clientWith(fetchImpl, { maxRepetition: 0.4, maxTailLoop: 0.5, minLength: 12 });
+  const error = await client.models.generateContent(params).then(() => null, (e) => e);
+  assert.ok(error, 'a looping response was not caught');
+  assert.equal(error.name, 'DegenerateOutputError', 'threw something else: ' + error);
+}
+
+// non-streaming: healthy output is forwarded intact
+{
+  const { fetchImpl } = transport(HEALTHY);
+  const response = await clientWith(fetchImpl, {}).models.generateContent(params);
+  assert.equal(response.text, HEALTHY, 'healthy output was not forwarded intact');
+}
+
+// streaming: healthy output is forwarded intact and nothing is cancelled
+{
+  const { state, fetchImpl } = transport(HEALTHY);
+  const stream = await clientWith(fetchImpl, {}).models.generateContentStream(params);
+  let text = '';
+  for await (const c of stream) text += c.text ?? '';
+  assert.equal(text, HEALTHY, 'healthy stream was not forwarded intact');
+  assert.equal(state.cancelled, false, 'healthy stream was cancelled');
+}
+
+// streaming: the claim -- the request is cancelled through the signal we injected
+{
+  const { state, fetchImpl } = transport(LOOPING);
+  const stream = await clientWith(fetchImpl, { maxRepetition: 0.4, maxTailLoop: 0.5, minLength: 12, onDegenerate: 'abort' })
+    .models.generateContentStream(params);
+  for await (const _ of stream) { /* drain */ }
+  await new Promise((r) => setTimeout(r, 20));
+  assert.ok(state.cancelled, 'the request was never cancelled -- tokens still billed');
+  assert.ok(state.sent < state.total, 'the whole stream was generated; nothing was saved');
+  console.log('    runtime ok -- request cancelled at ' + state.sent + '/' + state.total + ' chunks');
+}
+`;
+
 const PEERS = {
   ai: {
     // The ends of the declared range, and every major between. Floors are
@@ -377,6 +507,16 @@ const PEERS = {
     versions: ['0.60.0', '0.90.0', '0.117.1'],
     probeTs: ANTHROPIC_PROBE_TS,
     probeMjs: ANTHROPIC_PROBE_MJS,
+  },
+  /*
+   * Both majors, at each end. 1.0.0 is the floor because it is the first
+   * release carrying `models.generateContentStream` and `config.abortSignal`
+   * together -- the pair this adapter's cancellation is built on.
+   */
+  '@google/genai': {
+    versions: ['1.0.0', '1.9.0', '2.0.0', '2.19.0'],
+    probeTs: GOOGLE_PROBE_TS,
+    probeMjs: GOOGLE_PROBE_MJS,
   },
 };
 

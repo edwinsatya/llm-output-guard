@@ -4,6 +4,7 @@ import * as root from '../src/index.js';
 import * as aiSdk from '../src/ai-sdk.js';
 import * as openai from '../src/openai.js';
 import * as anthropic from '../src/anthropic.js';
+import * as google from '../src/google.js';
 
 /**
  * The public surface, frozen at 1.0.0.
@@ -73,6 +74,7 @@ describe('public surface', () => {
     expect(names(aiSdk)).toEqual(['outputGuard']);
     expect(names(openai)).toEqual(['withOutputGuard']);
     expect(names(anthropic)).toEqual(['withOutputGuard']);
+    expect(names(google)).toEqual(['withOutputGuard']);
   });
 
   /**
@@ -82,12 +84,13 @@ describe('public surface', () => {
    * shared base today and are free to diverge without widening or splitting a
    * frozen type.
    */
-  it('admits five entry points and no deep imports', () => {
+  it('admits six entry points and no deep imports', () => {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
     expect(Object.keys(pkg.exports).sort()).toEqual([
       '.',
       './ai-sdk',
       './anthropic',
+      './google',
       './openai',
       './package.json',
     ]);
@@ -189,3 +192,8 @@ export type {
   OutputGuardOptions as AnthropicOutputGuardOptions,
   DegenerateAction as AnthropicDegenerateAction,
 } from '../src/anthropic.js';
+
+export type {
+  OutputGuardOptions as GoogleOutputGuardOptions,
+  DegenerateAction as GoogleDegenerateAction,
+} from '../src/google.js';

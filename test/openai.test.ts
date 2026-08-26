@@ -104,6 +104,43 @@ const clientWith = (fetchImpl: typeof fetch) =>
 const params = { model: 'mock', messages: [{ role: 'user' as const, content: 'hi' }] };
 
 describe('withOutputGuard on a real OpenAI client', () => {
+  /**
+   * `.catch()` and `.finally()` are defined in terms of the `then` of whatever
+   * they are called on. A proxy that intercepts `then` but forwards these to
+   * the underlying `APIPromise` hands back a method bound to the *unguarded*
+   * promise, so the check never runs -- reachable through the most ordinary
+   * error handling there is, and silent when it happens.
+   */
+  describe('promise methods other than then', () => {
+    it('still checks a response reached through .catch()', async () => {
+      const { fetchImpl } = mockTransport(LOOPING);
+      const client = withOutputGuard(clientWith(fetchImpl as never), presets.chat);
+
+      const result = await client.chat.completions.create(params).catch((e: unknown) => e);
+
+      expect(result).toBeInstanceOf(DegenerateOutputError);
+    });
+
+    it('still checks a response reached through .finally()', async () => {
+      let ran = false;
+      const { fetchImpl } = mockTransport(LOOPING);
+      const client = withOutputGuard(clientWith(fetchImpl as never), presets.chat);
+
+      const error = await client.chat.completions
+        .create(params)
+        .finally(() => {
+          ran = true;
+        })
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+
+      expect(ran).toBe(true);
+      expect(error).toBeInstanceOf(DegenerateOutputError);
+    });
+  });
+
   describe('chat.completions.create({ stream: false })', () => {
     it('passes healthy output through untouched', async () => {
       const { fetchImpl } = mockTransport(HEALTHY);

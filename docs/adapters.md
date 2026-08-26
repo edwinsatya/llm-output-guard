@@ -199,6 +199,67 @@ judgement this package does not make.
 `>=0.60.0 <1.0.0` and verified at 0.60.0, 0.90.0 and 0.117.1 — each installing
 the packed tarball and running the adapter for real, not just typechecking.
 
+### Google Gemini SDK
+
+Same one wrap, same options — but Gemini splits streaming into its own method
+rather than putting it behind a flag, so both are named:
+
+```ts
+import { GoogleGenAI } from '@google/genai';
+import { withOutputGuard } from 'llm-output-guard/google';
+import { presets } from 'llm-output-guard';
+
+const ai = withOutputGuard(new GoogleGenAI({ apiKey }), {
+  ...presets.chat,
+  onDegenerate: 'abort',
+});
+
+await ai.models.generateContent({ model, contents });        // guarded
+await ai.models.generateContentStream({ model, contents });  // guarded
+```
+
+Three things are specific to this API:
+
+**Cancelling a stream works differently here, and it matters.**
+`generateContentStream` resolves to a bare `AsyncGenerator`. Unlike the OpenAI
+and Anthropic streams it carries no `AbortController`, so there is nothing on it
+to abort — and ending our own iteration would leave the model generating, and
+billing, while we looked away. The adapter therefore puts a signal *into* the
+outgoing request as `config.abortSignal`, which is what reaches `fetch`. Your
+request object is cloned rather than mutated, and a signal you supplied yourself
+keeps working: ours follows yours rather than replacing it.
+
+**Thought summaries are not read as the answer.** Gemini carries thinking in the
+same `text` field as the answer, flagged `thought: true`, so that flag is the
+only thing separating the two. Measured as answer text, reasoning would raise
+every repetition score on every thinking-enabled response — the same reason
+`./anthropic` skips `thinking` blocks.
+
+**Only the first candidate is judged.** `candidateCount` above 1 asks for
+*alternatives* to the same question and only one of them gets used.
+Concatenating them would measure a document nobody receives, and measure it
+wrongly in one direction: two good answers to one question share their subject,
+vocabulary and often their structure, so the more consistent the model was the
+higher its repetition score would climb.
+
+`MAX_TOKENS` maps to `TRUNCATED` — it lands on the length stop the detector
+already knows. Gemini's content stops (`SAFETY`, `RECITATION`, `BLOCKLIST`,
+`PROHIBITED_CONTENT`, `SPII`) deliberately do **not**: each is a decision about
+what the model may say rather than the model losing the thread, and reading one
+as truncation would discard the response and spend a retry earning the identical
+stop again.
+
+> **`chats` is not guarded.** `chats.create()` returns a `Chat` that holds its
+> own history, so guarding it means wrapping a value returned from a method
+> rather than a response — and deciding what a degenerate turn does to history
+> that has already been appended. Left plainly unguarded rather than half-done.
+> Use `models.generateContent`, or run `checkOutput` on the result yourself.
+
+`@google/genai` is an **optional peer dependency**, declared `>=1.0.0 <3.0.0`
+and verified at 1.0.0, 1.9.0, 2.0.0 and 2.19.0 — each installing the packed
+tarball and running the adapter for real, including the cancellation, not just
+typechecking.
+
 ### Tool calls and agents
 
 A model that answers by calling a tool returns no assistant text — OpenAI sends
@@ -207,7 +268,7 @@ no `text` part. Handed to `checkOutput`, that is an empty string, and an empty
 string scores `EMPTY`.
 
 So **the presence of tool calls means the text, if any, is a preamble rather
-than the answer**, and both adapters judge it as one:
+than the answer**, and every adapter judges it as one:
 
 | | On a tool-calling turn |
 |---|---|
