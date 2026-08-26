@@ -91,8 +91,9 @@ const client = withOutputGuard(new OpenAI(), { ...presets.chat, onDegenerate: 'a
 ```
 
 Adapters for the **OpenAI SDK** (both `chat.completions` and `responses`),
-**Anthropic**, and the **Vercel AI SDK** — plus anything speaking OpenAI's
-protocol: Groq, Together, OpenRouter, Fireworks, vLLM, Ollama.
+**Anthropic**, **Google Gemini** and the **Vercel AI SDK** — plus anything
+speaking OpenAI's protocol: Groq, Together, OpenRouter, Fireworks, vLLM,
+Ollama.
 
 On a stream this **cancels the HTTP request** the moment a loop is detectable, so
 you stop paying for the rest of it. Two switches worth knowing:
@@ -228,8 +229,9 @@ the public surface was frozen export by export in that release.
 
 **The public API is** everything exported from `llm-output-guard`, plus
 `outputGuard` / `OutputGuardOptions` / `DegenerateAction` from `./ai-sdk` and
-`withOutputGuard` / `OutputGuardOptions` / `DegenerateAction` from `./openai` and
-`./anthropic`. Each subpath is its own contract, so an option added to one is not
+`withOutputGuard` / `OutputGuardOptions` / `DegenerateAction` from `./openai`,
+`./anthropic` and `./google`. Each subpath is its own contract, so an option
+added to one is not
 a promise about the others. Anything else is internal and may move in any
 release. The list is asserted in `test/surface.test.ts`, so an export cannot join
 it by accident.
@@ -276,15 +278,6 @@ re-released as 0.5.0. The rule it broke is the one in the table above.
 - Truncation from a missing full stop is weak evidence, scored 0.55 and deliberately left below the defaults. Lower `maxTruncation` to ~0.5 to catch it, and expect false positives.
 - A JSON array of repeated identical records reads as a loop and fails from three records up. Set `redundancyScope: 'jsonValues'`.
 - Thresholds are calibrated on the bundled corpus. Yours will differ — and the word and character thresholds need calibrating **separately**.
-
-## Sponsor
-
-One person maintains this, in the open, for free. If it caught something real in
-your traffic, you can [sponsor the work](https://github.com/sponsors/edwinsatya).
-
-Nothing is held back for sponsors: the licence stays MIT, every detector lives in
-this repo, and no threshold, adapter or fix is gated behind a tier. It buys
-maintenance time, not access.
 
 ## License
 
