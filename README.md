@@ -277,6 +277,7 @@ interesting case, so it gets a rule of its own:
 | Adding a new detector that runs by default | **major** |
 | Adding a new *option*, defaulted so nothing changes | minor |
 | Adding a new detector that is opt-in | minor |
+| Adding a member to an exported union (`ReasonCode`) | minor |
 | Making an existing detector strictly more accurate on its own axis | minor |
 | Docs, internals, performance, fixing a detector that returned a wrong score | patch |
 
@@ -284,6 +285,16 @@ A threshold change does not break your build. It changes which of your productio
 responses get discarded and retried, which is a larger event than a signature
 change and invisible until your traffic hits it. A number in `presets.chat` is
 part of the contract in the same way a function name is.
+
+**A new union member is a minor, and the reasoning is the inverse of the row
+above.** Adding `AGENT_LOOP` to `ReasonCode` cannot change what any existing
+call returns — no response is judged differently and no threshold moves. What it
+can do is fail a consumer's *build*, where a bare `Record<ReasonCode, T>` is now
+missing a key or an exhaustive `switch` has lost its `never`. That breakage is
+loud, immediate, and one line to fix, which makes it the cheap kind: the
+expensive kind is the threshold change above, which builds fine and quietly
+discards different responses. Use `Partial<Record<ReasonCode, T>>` if you want
+to be immune — it is what this package's own CLI does.
 
 **Not covered:** the exact scores a detector returns (only their direction and
 the thresholds acting on them), the fixture corpus, `message` strings in
