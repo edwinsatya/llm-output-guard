@@ -103,6 +103,37 @@ replays it instead of answering is caught.
 
 **[docs/adapters.md](docs/adapters.md)** · **[docs/streaming.md](docs/streaming.md)**
 
+## Agents fail across turns, not inside one
+
+An agent that calls `read_file` on the same path six turns running has produced
+six healthy responses. Every detector above scores each of them **0.000**, and
+is right to — nothing is wrong with any *response*. What is wrong is the
+sequence.
+
+```ts
+import { createAgentGuard } from 'llm-output-guard/agent';
+
+const guard = createAgentGuard();
+
+while (!done) {
+  const response = await model.step();
+  const verdict = guard.observe({ text: response.text, toolCalls: response.toolCalls });
+  if (!verdict.ok) break; // the run is circling; stop paying for it
+}
+```
+
+`AGENT_LOOP` reads one axis nothing else here reads. It looks for an **exact**
+repeating cycle of turns, which is what keeps it off the shapes that dominate
+healthy agent traffic: twenty reads of twenty different files, an identical
+preamble on every turn, edit/test/edit/test, pagination, a retry. Every healthy
+trace in the corpus scores **0.000**; the weakest degenerate one scores 0.455.
+
+A turn carrying tool calls is judged by its **arguments**, never its prose —
+that is the difference between an agent working through a list and an agent
+stuck on one item.
+
+**[docs/agent-loops.md](docs/agent-loops.md)**
+
 ## The hard part is not catching loops
 
 A miss is annoying. **A false positive is worse** — a healthy response gets
@@ -228,10 +259,11 @@ What semver means here specifically. These rules bind from **1.0.0** onward, and
 the public surface was frozen export by export in that release.
 
 **The public API is** everything exported from `llm-output-guard`, plus
-`outputGuard` / `OutputGuardOptions` / `DegenerateAction` from `./ai-sdk` and
+`outputGuard` / `OutputGuardOptions` / `DegenerateAction` from `./ai-sdk`,
 `withOutputGuard` / `OutputGuardOptions` / `DegenerateAction` from `./openai`,
-`./anthropic` and `./google`. Each subpath is its own contract, so an option
-added to one is not
+`./anthropic` and `./google`, and `checkTrace` / `assertTrace` /
+`createAgentGuard` / `agentLoopScore` / `agentLoopDetail` from `./agent`. Each
+subpath is its own contract, so an option added to one is not
 a promise about the others. Anything else is internal and may move in any
 release. The list is asserted in `test/surface.test.ts`, so an export cannot join
 it by accident.
@@ -277,6 +309,8 @@ re-released as 0.5.0. The rule it broke is the one in the table above.
 - `openai`'s `responses.stream()` helper is not wrapped; `create({ stream: true })` is.
 - Truncation from a missing full stop is weak evidence, scored 0.55 and deliberately left below the defaults. Lower `maxTruncation` to ~0.5 to catch it, and expect false positives.
 - A JSON array of repeated identical records reads as a loop and fails from three records up. Set `redundancyScope: 'jsonValues'`.
+- `AGENT_LOOP` needs an *exact* cycle. An agent circling without repeating — `build`, read a file, `build`, read another, `build` — is **not** detected: the only signal that reads it scores that 0.444 against a healthy edit/test rhythm's 0.375, a margin too small to ship. Measured, rejected, and pinned by a test.
+- A tool whose job is to be called repeatedly with identical arguments (polling, sleeping) is indistinguishable from a loop by shape. Name it in `ignoreTools`.
 - Thresholds are calibrated on the bundled corpus. Yours will differ — and the word and character thresholds need calibrating **separately**.
 
 ## License

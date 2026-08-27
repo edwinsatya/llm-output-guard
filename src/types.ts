@@ -11,7 +11,13 @@ export type ReasonCode =
   | 'INVALID_JSON'
   | 'SCRIPT_MISMATCH'
   | 'LANG_MISMATCH'
-  | 'PROMPT_ECHO';
+  | 'PROMPT_ECHO'
+  /**
+   * An agent run that stopped advancing -- the same cycle of turns, over and
+   * over. Reported only by `llm-output-guard/agent`, which is the only entry
+   * point that sees more than one response.
+   */
+  | 'AGENT_LOOP';
 
 /**
  * Which tokenizer produced a score.

@@ -1,0 +1,52 @@
+{
+  "id": "retry-after-error-once",
+  "category": "retry",
+  "note": "TRAP: a call fails transiently and the model tries it once more, then moves on. One repeat is never evidence.",
+  "turns": [
+    {
+      "text": "Fetching the release notes.",
+      "toolCalls": [
+        {
+          "name": "http_get",
+          "arguments": {
+            "url": "https://example.com/releases"
+          }
+        }
+      ]
+    },
+    {
+      "text": "That timed out. Trying again.",
+      "toolCalls": [
+        {
+          "name": "http_get",
+          "arguments": {
+            "url": "https://example.com/releases"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Got it. Now summarising the changelog.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "CHANGELOG.md"
+          }
+        }
+      ]
+    },
+    {
+      "text": "The 2.1 release adds streaming and drops Node 16."
+    }
+  ],
+  "measured": {
+    "turns": 4,
+    "measured": 4,
+    "cycle": {
+      "score": 0,
+      "period": 0,
+      "repeats": 0
+    }
+  }
+}

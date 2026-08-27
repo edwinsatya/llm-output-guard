@@ -1,0 +1,31 @@
+{
+  "id": "text-turns-distinct",
+  "category": "progress",
+  "note": "A prose-only conversation that advances. The turns share vocabulary and structure the way a conversation on one subject does.",
+  "turns": [
+    {
+      "text": "The build fails because the tsconfig targets ES2019 and the code uses top-level await."
+    },
+    {
+      "text": "Raising the target to ES2022 fixes the build but changes the emitted helpers."
+    },
+    {
+      "text": "The emitted helpers only matter if you still ship to Node 14, which the engines field rules out."
+    },
+    {
+      "text": "So the change is safe: raise target to ES2022 and drop the downlevel helpers."
+    },
+    {
+      "text": "One caveat -- the browser bundle inherits this target, so check the minimum browser you support."
+    }
+  ],
+  "measured": {
+    "turns": 5,
+    "measured": 5,
+    "cycle": {
+      "score": 0,
+      "period": 0,
+      "repeats": 0
+    }
+  }
+}

@@ -1,0 +1,141 @@
+{
+  "id": "tool-loop-after-progress",
+  "category": "tool-loop",
+  "note": "Six turns of real progress, then stuck. Whole-trace redundancy dilutes this to half; the trailing window is where it reads.",
+  "turns": [
+    {
+      "text": "Listing the source directory.",
+      "toolCalls": [
+        {
+          "name": "list_dir",
+          "arguments": {
+            "path": "src"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the entry point.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/index.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the router.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/router.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Searching for the handler.",
+      "toolCalls": [
+        {
+          "name": "grep",
+          "arguments": {
+            "pattern": "handleRequest"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the handler.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/handler.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Applying the fix.",
+      "toolCalls": [
+        {
+          "name": "edit_file",
+          "arguments": {
+            "path": "src/handler.ts",
+            "content": "return res.status(200).json(body);"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Running the tests.",
+      "toolCalls": [
+        {
+          "name": "run_tests",
+          "arguments": {
+            "filter": "handler"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Running the tests.",
+      "toolCalls": [
+        {
+          "name": "run_tests",
+          "arguments": {
+            "filter": "handler"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Running the tests.",
+      "toolCalls": [
+        {
+          "name": "run_tests",
+          "arguments": {
+            "filter": "handler"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Running the tests.",
+      "toolCalls": [
+        {
+          "name": "run_tests",
+          "arguments": {
+            "filter": "handler"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Running the tests.",
+      "toolCalls": [
+        {
+          "name": "run_tests",
+          "arguments": {
+            "filter": "handler"
+          }
+        }
+      ]
+    }
+  ],
+  "expect": [
+    "AGENT_LOOP"
+  ],
+  "measured": {
+    "turns": 11,
+    "measured": 11,
+    "cycle": {
+      "score": 0.455,
+      "period": 1,
+      "repeats": 5
+    }
+  }
+}

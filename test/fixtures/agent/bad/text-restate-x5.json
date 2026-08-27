@@ -1,0 +1,34 @@
+{
+  "id": "text-restate-x5",
+  "category": "text-loop",
+  "note": "No tool calls at all. The model restates the same sentence every turn, whitespace and capitalisation drifting.",
+  "turns": [
+    {
+      "text": "Let me check the configuration file for the database settings."
+    },
+    {
+      "text": "Let me check the configuration file for the database settings."
+    },
+    {
+      "text": "Let me check the configuration  file for the database settings."
+    },
+    {
+      "text": "let me check the configuration file for the database settings."
+    },
+    {
+      "text": "Let me check the configuration file for the database settings.\n"
+    }
+  ],
+  "expect": [
+    "AGENT_LOOP"
+  ],
+  "measured": {
+    "turns": 5,
+    "measured": 5,
+    "cycle": {
+      "score": 1,
+      "period": 1,
+      "repeats": 5
+    }
+  }
+}

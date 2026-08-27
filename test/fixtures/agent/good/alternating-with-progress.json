@@ -1,0 +1,100 @@
+{
+  "id": "alternating-with-progress",
+  "category": "progress",
+  "note": "TRAP: edit/test/edit/test looks exactly like a period-2 cycle, and every run_tests call is byte-identical. The edits are not, so the pair never repeats.",
+  "turns": [
+    {
+      "text": "Fixing the first import.",
+      "toolCalls": [
+        {
+          "name": "edit_file",
+          "arguments": {
+            "path": "src/a.ts",
+            "content": "import { z } from 'zod';"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Running the tests.",
+      "toolCalls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ]
+    },
+    {
+      "text": "Fixing the second import.",
+      "toolCalls": [
+        {
+          "name": "edit_file",
+          "arguments": {
+            "path": "src/b.ts",
+            "content": "import { readFile } from 'node:fs/promises';"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Running the tests.",
+      "toolCalls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ]
+    },
+    {
+      "text": "Fixing the third import.",
+      "toolCalls": [
+        {
+          "name": "edit_file",
+          "arguments": {
+            "path": "src/c.ts",
+            "content": "import { createHash } from 'node:crypto';"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Running the tests.",
+      "toolCalls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ]
+    },
+    {
+      "text": "Fixing the last import.",
+      "toolCalls": [
+        {
+          "name": "edit_file",
+          "arguments": {
+            "path": "src/d.ts",
+            "content": "import { setTimeout } from 'node:timers/promises';"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Running the tests.",
+      "toolCalls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ]
+    }
+  ],
+  "measured": {
+    "turns": 8,
+    "measured": 8,
+    "cycle": {
+      "score": 0,
+      "period": 0,
+      "repeats": 0
+    }
+  }
+}

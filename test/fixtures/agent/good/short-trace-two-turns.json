@@ -1,0 +1,38 @@
+{
+  "id": "short-trace-two-turns",
+  "category": "floor",
+  "note": "Two identical turns and nothing else. Total collapse by coverage, and no evidence of anything -- the trace abstains rather than guessing.",
+  "turns": [
+    {
+      "text": "Reading the file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/index.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/index.ts"
+          }
+        }
+      ]
+    }
+  ],
+  "measured": {
+    "turns": 2,
+    "measured": 2,
+    "cycle": {
+      "score": 0,
+      "period": 0,
+      "repeats": 0
+    }
+  }
+}

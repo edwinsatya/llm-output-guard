@@ -20,6 +20,11 @@ Every detector, the signal it reads, and the function that exposes it on its own
 Every detector is exported on its own if you only want one, and every name in
 that last column is covered by semver — see **Stability**.
 
+One code is deliberately absent from that table: **`AGENT_LOOP`** is reported by
+`llm-output-guard/agent`, never by `checkOutput`. It measures a sequence of
+responses rather than a response, so it cannot be computed from the one string
+`checkOutput` is given — **[docs/agent-loops.md](agent-loops.md)**.
+
 ```ts
 import { repetitionScore, tailLoopDetail, stripFence } from 'llm-output-guard';
 

@@ -1,5 +1,6 @@
 import type { TokenMode } from '../types.js';
 import { words, chars, clamp01, tokenModeOf } from '../internal/tokenize.js';
+import { periodicCoverage } from '../internal/periodicity.js';
 
 export interface RepetitionOptions {
   /** N-gram size. 3 suits prose; 2 is noisy, 4 misses short loops. */
@@ -93,42 +94,6 @@ export interface TailLoopResult {
 }
 
 /**
- * Largest share of `tail` covered by a block repeating to its end.
- *
- * Shared by both modes so the two cannot drift apart: word mode passes word
- * tokens, char mode passes characters, and the periodicity search is the same
- * code either way.
- */
-function periodicCoverage(
-  tail: readonly string[],
-  maxPeriod: number,
-  minRepeats: number,
-): number {
-  if (tail.length < minRepeats * 2) return 0;
-
-  let best = 0;
-  const periodCap = Math.min(maxPeriod, Math.floor(tail.length / minRepeats));
-  for (let p = 1; p <= periodCap; p++) {
-    const block = tail.slice(tail.length - p);
-    let repeats = 1;
-    let cursor = tail.length - p;
-    while (cursor - p >= 0) {
-      let same = true;
-      for (let k = 0; k < p; k++) {
-        if (tail[cursor - p + k] !== block[k]) { same = false; break; }
-      }
-      if (!same) break;
-      repeats++;
-      cursor -= p;
-    }
-    if (repeats >= minRepeats) {
-      best = Math.max(best, clamp01((repeats * p) / tail.length));
-    }
-  }
-  return best;
-}
-
-/**
  * Detects the specific failure where a model terminates in a repeating tail --
  * the same clause emitted over and over until max_tokens runs out.
  *
@@ -163,11 +128,11 @@ export function tailLoopDetail(text: string, options: TailLoopOptions = {}): Tai
 
   if (mode === 'char') {
     if (charTail.length < minCharSample) return { score: 0, mode };
-    return { score: periodicCoverage(charTail, maxCharPeriod, minRepeats), mode };
+    return { score: periodicCoverage(charTail, { maxPeriod: maxCharPeriod, minRepeats }), mode };
   }
 
   const tail = words(text).slice(-tailWords);
-  return { score: periodicCoverage(tail, maxPeriod, minRepeats), mode };
+  return { score: periodicCoverage(tail, { maxPeriod, minRepeats }), mode };
 }
 
 /** {@link tailLoopDetail} without the mode, for callers that only want the score. */

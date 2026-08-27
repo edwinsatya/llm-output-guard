@@ -1,0 +1,84 @@
+{
+  "id": "same-tool-drifting-args",
+  "category": "fan-out",
+  "note": "TRAP: pagination. One tool, one query, only the offset moving. Near-identical by any similarity measure and correct.",
+  "turns": [
+    {
+      "text": "Fetching the first page.",
+      "toolCalls": [
+        {
+          "name": "search",
+          "arguments": {
+            "query": "incident report",
+            "limit": 50,
+            "offset": 0
+          }
+        }
+      ]
+    },
+    {
+      "text": "Fetching the next page.",
+      "toolCalls": [
+        {
+          "name": "search",
+          "arguments": {
+            "query": "incident report",
+            "limit": 50,
+            "offset": 50
+          }
+        }
+      ]
+    },
+    {
+      "text": "Fetching the next page.",
+      "toolCalls": [
+        {
+          "name": "search",
+          "arguments": {
+            "query": "incident report",
+            "limit": 50,
+            "offset": 100
+          }
+        }
+      ]
+    },
+    {
+      "text": "Fetching the next page.",
+      "toolCalls": [
+        {
+          "name": "search",
+          "arguments": {
+            "query": "incident report",
+            "limit": 50,
+            "offset": 150
+          }
+        }
+      ]
+    },
+    {
+      "text": "Fetching the last page.",
+      "toolCalls": [
+        {
+          "name": "search",
+          "arguments": {
+            "query": "incident report",
+            "limit": 50,
+            "offset": 200
+          }
+        }
+      ]
+    },
+    {
+      "text": "Two hundred and thirteen incidents, of which nine are unresolved."
+    }
+  ],
+  "measured": {
+    "turns": 6,
+    "measured": 6,
+    "cycle": {
+      "score": 0,
+      "period": 0,
+      "repeats": 0
+    }
+  }
+}

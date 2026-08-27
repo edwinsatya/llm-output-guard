@@ -1,0 +1,66 @@
+{
+  "id": "parallel-fanout-one-turn",
+  "category": "fan-out",
+  "note": "TRAP: one turn issuing five parallel calls to the same tool. Repetition within a turn is parallelism, not a loop -- the axis this detector reads is across turns.",
+  "turns": [
+    {
+      "text": "Reading all five in parallel.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/a.ts"
+          }
+        },
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/b.ts"
+          }
+        },
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/c.ts"
+          }
+        },
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/d.ts"
+          }
+        },
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/e.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Summarising what they have in common.",
+      "toolCalls": [
+        {
+          "name": "edit_file",
+          "arguments": {
+            "path": "NOTES.md",
+            "content": "All five modules import the shared logger."
+          }
+        }
+      ]
+    },
+    {
+      "text": "All five import the shared logger; only two of them close it."
+    }
+  ],
+  "measured": {
+    "turns": 3,
+    "measured": 3,
+    "cycle": {
+      "score": 0,
+      "period": 0,
+      "repeats": 0
+    }
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "id": "tool-cycle-ab-x4",
+  "category": "tool-loop",
+  "note": "Period-2 cycle. Edit the same file with the same content, run the same tests, repeat. Neither call alone repeats consecutively.",
+  "turns": [
+    {
+      "text": "Fixing the import.",
+      "toolCalls": [
+        {
+          "name": "edit_file",
+          "arguments": {
+            "path": "src/app.ts",
+            "content": "import { z } from 'zod';"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Now running the tests.",
+      "toolCalls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ]
+    },
+    {
+      "text": "Fixing the import.",
+      "toolCalls": [
+        {
+          "name": "edit_file",
+          "arguments": {
+            "path": "src/app.ts",
+            "content": "import { z } from 'zod';"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Now running the tests.",
+      "toolCalls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ]
+    },
+    {
+      "text": "Fixing the import.",
+      "toolCalls": [
+        {
+          "name": "edit_file",
+          "arguments": {
+            "path": "src/app.ts",
+            "content": "import { z } from 'zod';"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Now running the tests.",
+      "toolCalls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ]
+    },
+    {
+      "text": "Fixing the import.",
+      "toolCalls": [
+        {
+          "name": "edit_file",
+          "arguments": {
+            "path": "src/app.ts",
+            "content": "import { z } from 'zod';"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Now running the tests.",
+      "toolCalls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ]
+    }
+  ],
+  "expect": [
+    "AGENT_LOOP"
+  ],
+  "measured": {
+    "turns": 8,
+    "measured": 8,
+    "cycle": {
+      "score": 1,
+      "period": 2,
+      "repeats": 4
+    }
+  }
+}

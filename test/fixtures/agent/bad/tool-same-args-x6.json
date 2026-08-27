@@ -1,0 +1,85 @@
+{
+  "id": "tool-same-args-x6",
+  "category": "tool-loop",
+  "note": "The plainest shape: identical call, six times, no progress. Every individual turn is a healthy response.",
+  "turns": [
+    {
+      "text": "Let me read the config file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/config.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Let me read the config file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/config.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Let me read the config file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/config.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Let me read the config file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/config.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Let me read the config file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/config.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Let me read the config file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/config.ts"
+          }
+        }
+      ]
+    }
+  ],
+  "expect": [
+    "AGENT_LOOP"
+  ],
+  "measured": {
+    "turns": 6,
+    "measured": 6,
+    "cycle": {
+      "score": 1,
+      "period": 1,
+      "repeats": 6
+    }
+  }
+}

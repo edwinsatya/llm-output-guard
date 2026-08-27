@@ -1,0 +1,236 @@
+{
+  "id": "batch-read-distinct-files",
+  "category": "fan-out",
+  "note": "TRAP: twenty consecutive calls to one tool. Reading twenty files is what the tool is for -- the arguments are what carry the progress.",
+  "turns": [
+    {
+      "text": "Reading the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/index.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/router.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/handler.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/db.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/auth.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/cache.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/queue.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/mailer.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/config.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/logger.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/metrics.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/tracing.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/schema.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/types.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/utils.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/errors.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/middleware.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/session.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/upload.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/search.ts"
+          }
+        }
+      ]
+    }
+  ],
+  "measured": {
+    "turns": 20,
+    "measured": 12,
+    "cycle": {
+      "score": 0,
+      "period": 0,
+      "repeats": 0
+    }
+  }
+}

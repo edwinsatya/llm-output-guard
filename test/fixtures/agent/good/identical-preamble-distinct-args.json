@@ -1,0 +1,82 @@
+{
+  "id": "identical-preamble-distinct-args",
+  "category": "fan-out",
+  "note": "TRAP: the prose is word-for-word identical on every turn and the work is not. This is why a turn carrying tool calls is fingerprinted by the calls and never by its preamble.",
+  "turns": [
+    {
+      "text": "Let me check the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/a.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Let me check the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/b.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Let me check the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/c.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Let me check the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/d.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Let me check the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/e.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Let me check the next file.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/f.ts"
+          }
+        }
+      ]
+    }
+  ],
+  "measured": {
+    "turns": 6,
+    "measured": 6,
+    "cycle": {
+      "score": 0,
+      "period": 0,
+      "repeats": 0
+    }
+  }
+}

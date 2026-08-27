@@ -74,6 +74,16 @@
         "default": "./dist/google.cjs"
       }
     },
+    "./agent": {
+      "import": {
+        "types": "./dist/agent.d.ts",
+        "default": "./dist/agent.js"
+      },
+      "require": {
+        "types": "./dist/agent.d.cts",
+        "default": "./dist/agent.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "bin": {
@@ -91,6 +101,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "calibrate": "tsx scripts/calibrate.ts",
+    "measure:agent": "tsx scripts/measure-agent.ts",
+    "pin:agent": "tsx scripts/pin-agent-fixtures.ts",
     "check:peers": "node scripts/check-peers.mjs",
     "seed": "node scripts/seed-fixtures.mjs",
     "provoke": "npm run build --silent && node scripts/generate-fixtures.mjs",

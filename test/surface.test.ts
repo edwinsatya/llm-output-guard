@@ -5,6 +5,7 @@ import * as aiSdk from '../src/ai-sdk.js';
 import * as openai from '../src/openai.js';
 import * as anthropic from '../src/anthropic.js';
 import * as google from '../src/google.js';
+import * as agent from '../src/agent.js';
 
 /**
  * The public surface, frozen at 1.0.0.
@@ -78,16 +79,43 @@ describe('public surface', () => {
   });
 
   /**
+   * `./agent` is the one subpath that is not an adapter, so it is the one with
+   * a surface of its own to freeze. It deliberately re-exports
+   * `DegenerateOutputError` rather than declaring a second error type: a
+   * degenerate response and a degenerate run want the same `catch`.
+   *
+   * The detector is reachable here and **not** from the root, so the frozen
+   * root list above stays exactly as it was.
+   */
+  it('exports exactly the frozen list from ./agent', () => {
+    expect(names(agent)).toEqual([
+      'DegenerateOutputError',
+      'agentLoopDetail',
+      'agentLoopScore',
+      'assertTrace',
+      'checkTrace',
+      'createAgentGuard',
+    ].sort());
+  });
+
+  it('keeps the cross-turn detector out of the root surface', () => {
+    expect(names(root)).not.toContain('agentLoopScore');
+    expect(names(root)).not.toContain('agentLoopDetail');
+    expect(names(root)).not.toContain('checkTrace');
+  });
+
+  /**
    * What makes `AdapterGuardOptions` internal is not a missing export -- it is
    * that `src/internal/*` has no import path once the package is installed.
    * Each adapter's `OutputGuardOptions` is its own contract; they extend a
    * shared base today and are free to diverge without widening or splitting a
    * frozen type.
    */
-  it('admits six entry points and no deep imports', () => {
+  it('admits seven entry points and no deep imports', () => {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
     expect(Object.keys(pkg.exports).sort()).toEqual([
       '.',
+      './agent',
       './ai-sdk',
       './anthropic',
       './google',

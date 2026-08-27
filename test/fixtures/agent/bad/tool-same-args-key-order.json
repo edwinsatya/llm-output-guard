@@ -1,0 +1,84 @@
+{
+  "id": "tool-same-args-key-order",
+  "category": "tool-loop",
+  "note": "Identical calls whose argument keys arrive in a different order each turn. A raw JSON.stringify sees six distinct calls; canonicalisation sees one.",
+  "turns": [
+    {
+      "text": "Searching.",
+      "toolCalls": [
+        {
+          "name": "search",
+          "arguments": {
+            "query": "rate limit",
+            "limit": 10,
+            "offset": 0
+          }
+        }
+      ]
+    },
+    {
+      "text": "Searching.",
+      "toolCalls": [
+        {
+          "name": "search",
+          "arguments": {
+            "limit": 10,
+            "query": "rate limit",
+            "offset": 0
+          }
+        }
+      ]
+    },
+    {
+      "text": "Searching.",
+      "toolCalls": [
+        {
+          "name": "search",
+          "arguments": {
+            "offset": 0,
+            "limit": 10,
+            "query": "rate limit"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Searching.",
+      "toolCalls": [
+        {
+          "name": "search",
+          "arguments": {
+            "query": "rate limit",
+            "offset": 0,
+            "limit": 10
+          }
+        }
+      ]
+    },
+    {
+      "text": "Searching.",
+      "toolCalls": [
+        {
+          "name": "search",
+          "arguments": {
+            "limit": 10,
+            "offset": 0,
+            "query": "rate limit"
+          }
+        }
+      ]
+    }
+  ],
+  "expect": [
+    "AGENT_LOOP"
+  ],
+  "measured": {
+    "turns": 5,
+    "measured": 5,
+    "cycle": {
+      "score": 1,
+      "period": 1,
+      "repeats": 5
+    }
+  }
+}

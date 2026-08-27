@@ -344,23 +344,11 @@ function excerpt(text, max = 80) {
   return flat.length <= max ? flat : flat.slice(0, max) + "\u2026";
 }
 
-// src/detectors/repetition.ts
-function repetitionScore(text, options = {}) {
-  const { n = 3, maxSample = 8e3 } = options;
-  const w = words(text.slice(0, maxSample));
-  if (w.length < n * 4) return 0;
-  const seen = /* @__PURE__ */ new Set();
-  let total = 0;
-  for (let i = 0; i + n <= w.length; i++) {
-    seen.add(w.slice(i, i + n).join(" "));
-    total++;
-  }
-  if (total === 0) return 0;
-  return clamp01(1 - seen.size / total);
-}
-function periodicCoverage(tail, maxPeriod, minRepeats) {
-  if (tail.length < minRepeats * 2) return 0;
-  let best = 0;
+// src/internal/periodicity.ts
+function periodicDetail(tail, { maxPeriod, minRepeats, minSample = minRepeats * 2 }) {
+  const none = { score: 0, period: 0, repeats: 0 };
+  if (tail.length < minSample) return none;
+  let best = none;
   const periodCap = Math.min(maxPeriod, Math.floor(tail.length / minRepeats));
   for (let p = 1; p <= periodCap; p++) {
     const block = tail.slice(tail.length - p);
@@ -379,10 +367,29 @@ function periodicCoverage(tail, maxPeriod, minRepeats) {
       cursor -= p;
     }
     if (repeats >= minRepeats) {
-      best = Math.max(best, clamp01(repeats * p / tail.length));
+      const score = clamp01(repeats * p / tail.length);
+      if (score > best.score) best = { score, period: p, repeats };
     }
   }
   return best;
+}
+function periodicCoverage(tail, options) {
+  return periodicDetail(tail, options).score;
+}
+
+// src/detectors/repetition.ts
+function repetitionScore(text, options = {}) {
+  const { n = 3, maxSample = 8e3 } = options;
+  const w = words(text.slice(0, maxSample));
+  if (w.length < n * 4) return 0;
+  const seen = /* @__PURE__ */ new Set();
+  let total = 0;
+  for (let i = 0; i + n <= w.length; i++) {
+    seen.add(w.slice(i, i + n).join(" "));
+    total++;
+  }
+  if (total === 0) return 0;
+  return clamp01(1 - seen.size / total);
 }
 function tailLoopDetail(text, options = {}) {
   const {
@@ -398,10 +405,10 @@ function tailLoopDetail(text, options = {}) {
   const mode = options.mode ?? tokenModeOf(charTail.join(""), nonSpacedCutoff);
   if (mode === "char") {
     if (charTail.length < minCharSample) return { score: 0, mode };
-    return { score: periodicCoverage(charTail, maxCharPeriod, minRepeats), mode };
+    return { score: periodicCoverage(charTail, { maxPeriod: maxCharPeriod, minRepeats }), mode };
   }
   const tail = words(text).slice(-tailWords);
-  return { score: periodicCoverage(tail, maxPeriod, minRepeats), mode };
+  return { score: periodicCoverage(tail, { maxPeriod, minRepeats }), mode };
 }
 function tailLoopScore(text, options = {}) {
   return tailLoopDetail(text, options).score;

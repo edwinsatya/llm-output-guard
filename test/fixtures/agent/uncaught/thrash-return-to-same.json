@@ -1,0 +1,105 @@
+{
+  "id": "thrash-return-to-same",
+  "category": "thrash",
+  "note": "NOT CAUGHT, and deliberately. The agent keeps returning to one failing call between other work, so no exact cycle exists. The only signal that reads it -- turn redundancy -- scores this 0.444 and healthy alternating-with-progress 0.375, a margin of 0.069 against this package's 0.2 bar. Measured, rejected, and pinned here so the gap cannot be forgotten or silently closed.",
+  "turns": [
+    {
+      "text": "Running the build.",
+      "toolCalls": [
+        {
+          "name": "run_build",
+          "arguments": {}
+        }
+      ]
+    },
+    {
+      "text": "Reading the error.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "dist/error.log"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Running the build.",
+      "toolCalls": [
+        {
+          "name": "run_build",
+          "arguments": {}
+        }
+      ]
+    },
+    {
+      "text": "Checking the tsconfig.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "tsconfig.json"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Running the build.",
+      "toolCalls": [
+        {
+          "name": "run_build",
+          "arguments": {}
+        }
+      ]
+    },
+    {
+      "text": "Listing dist.",
+      "toolCalls": [
+        {
+          "name": "list_dir",
+          "arguments": {
+            "path": "dist"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Running the build.",
+      "toolCalls": [
+        {
+          "name": "run_build",
+          "arguments": {}
+        }
+      ]
+    },
+    {
+      "text": "Checking package.json.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "package.json"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Running the build.",
+      "toolCalls": [
+        {
+          "name": "run_build",
+          "arguments": {}
+        }
+      ]
+    }
+  ],
+  "measured": {
+    "turns": 9,
+    "cycle": {
+      "score": 0.0,
+      "period": 0,
+      "repeats": 0
+    },
+    "rejectedRedundancy": 0.444
+  }
+}

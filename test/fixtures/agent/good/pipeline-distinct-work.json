@@ -1,0 +1,96 @@
+{
+  "id": "pipeline-distinct-work",
+  "category": "progress",
+  "note": "An ordinary agent run. Eight turns, no two alike.",
+  "turns": [
+    {
+      "text": "Searching for the failing assertion.",
+      "toolCalls": [
+        {
+          "name": "grep",
+          "arguments": {
+            "pattern": "expect(user.role)"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the test.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "test/auth.test.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Reading the implementation.",
+      "toolCalls": [
+        {
+          "name": "read_file",
+          "arguments": {
+            "path": "src/auth.ts"
+          }
+        }
+      ]
+    },
+    {
+      "text": "The role defaults too late. Patching.",
+      "toolCalls": [
+        {
+          "name": "edit_file",
+          "arguments": {
+            "path": "src/auth.ts",
+            "content": "const role = input.role ?? 'viewer';"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Running the auth tests.",
+      "toolCalls": [
+        {
+          "name": "run_tests",
+          "arguments": {
+            "filter": "auth"
+          }
+        }
+      ]
+    },
+    {
+      "text": "One snapshot needs updating.",
+      "toolCalls": [
+        {
+          "name": "run_tests",
+          "arguments": {
+            "filter": "auth",
+            "update": true
+          }
+        }
+      ]
+    },
+    {
+      "text": "Checking nothing else regressed.",
+      "toolCalls": [
+        {
+          "name": "run_tests",
+          "arguments": {}
+        }
+      ]
+    },
+    {
+      "text": "Fixed: the default role was applied after the permission check rather than before it."
+    }
+  ],
+  "measured": {
+    "turns": 8,
+    "measured": 8,
+    "cycle": {
+      "score": 0,
+      "period": 0,
+      "repeats": 0
+    }
+  }
+}

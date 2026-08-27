@@ -1,0 +1,71 @@
+{
+  "id": "poll-status-three-times",
+  "category": "polling",
+  "note": "TRAP, and the boundary case: polling a job is identical by shape to a loop. Three identical calls sit under the floor. Longer polling does not, which is a documented limitation with an escape hatch, not a bug.",
+  "turns": [
+    {
+      "text": "Starting the export.",
+      "toolCalls": [
+        {
+          "name": "start_export",
+          "arguments": {
+            "table": "orders"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Checking whether it finished.",
+      "toolCalls": [
+        {
+          "name": "get_job_status",
+          "arguments": {
+            "id": "job_8812"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Still running. Checking again.",
+      "toolCalls": [
+        {
+          "name": "get_job_status",
+          "arguments": {
+            "id": "job_8812"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Checking once more.",
+      "toolCalls": [
+        {
+          "name": "get_job_status",
+          "arguments": {
+            "id": "job_8812"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Done. Downloading the file.",
+      "toolCalls": [
+        {
+          "name": "download",
+          "arguments": {
+            "id": "job_8812"
+          }
+        }
+      ]
+    }
+  ],
+  "measured": {
+    "turns": 5,
+    "measured": 5,
+    "cycle": {
+      "score": 0,
+      "period": 0,
+      "repeats": 0
+    }
+  }
+}
