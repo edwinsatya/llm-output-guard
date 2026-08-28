@@ -1,5 +1,129 @@
 # llm-output-guard
 
+## 1.10.0
+
+### Minor Changes
+
+- b908691: `toTurn`, from all four adapter subpaths, for building the turns
+  `llm-output-guard/agent` reads.
+
+  ```ts
+  import { createAgentGuard } from "llm-output-guard/agent";
+  import { toTurn } from "llm-output-guard/openai";
+
+  const guard = createAgentGuard();
+  const verdict = guard.observe(toTurn(completion));
+  ```
+
+  1.9.0 shipped the detector and left the wiring to the caller. That wiring is
+  four lines, and one of them is `call.function.arguments` — **reach into the
+  wrong field and nothing throws, warns or scores high.** Every turn fingerprints
+  differently, `AGENT_LOOP` reports 0.000 for the life of the process, and the
+  result is a guard you believe in and do not have. Same shape as the `.catch()`
+  hole fixed in 1.8.0, one layer up and on the least familiar API in the package.
+
+  Each mapper carries what the adapter beside it already knew: both OpenAI APIs
+  discriminated on `choices` plus the legacy `function_call` spelling; Anthropic's
+  server tools alongside `tool_use`, with thinking blocks read as neither text nor
+  a call; Gemini's thought summaries excluded and `executableCode` counted; and
+  the AI SDK's `content` parts array or flat `{ text, toolCalls }`, with `input`
+  and the older `args` reaching the same fingerprint.
+
+  **OpenAI and Gemini read the first choice or candidate only**, where
+  `withOutputGuard` joins them all. The two are asking different questions:
+  `n > 1` offers alternatives to one question and an agent feeds exactly one of
+  them onward, so fingerprinting the concatenation would describe a turn that
+  never happened — and describe it unstably, since which alternatives arrive
+  varies per call.
+
+  The Anthropic rule is the one that bites hardest. Two turns whose reasoning
+  differs and whose action is identical are the same turn: an agent retrying
+  `run_tests` with a fresh rationalisation each time is looping, and reading
+  thinking as text scores that at zero.
+
+  **No mapper throws.** Anything unrecognised maps to an empty turn, which the
+  trace drops rather than counts. That covers a `content` that is a string —
+  which is what an Anthropic _request_ message looks like, an easy thing to pass
+  by mistake, and the case that crashed the mapper before a test caught it. A
+  mapper sits between a provider and a guard, which is the worst place in the
+  stack to throw.
+
+- aebc0fd: `check --trace`, so `AGENT_LOOP` can be calibrated against your own agent runs.
+
+  ```bash
+  npx llm-output-guard check runs.jsonl --trace --json \
+    | npx llm-output-guard calibrate --fpr 0.001
+  ```
+
+  The README's central claim is that shipped thresholds are tuned on a corpus that
+  is not your traffic. `maxAgentLoop: 0.4` shipped in 1.9.0 with no way to act on
+  that — and of every threshold in this package it rests on the least evidence:
+  eighteen fixtures written in one sitting, none from a real agent.
+
+  Narrower than it sounds, because `calibrate` was already code-agnostic:
+  `ScoreSample` is keyed by `ReasonCode`, so `AGENT_LOOP` samples flow through the
+  existing engine untouched. What was missing was only a producer. `check` reads
+  responses; nothing turned a run into a sample.
+
+  Each line is one run — a list of turns, on its own or under a `turns` key — and
+  a turn is read as liberally as a response already was: a native `AgentTurn`, or
+  the raw envelope from any provider this package adapts, mapped by that
+  provider's own `toTurn` so the CLI cannot drift from the library. A file that
+  parses whole as one array is read as a single run, because a run logged as one
+  pretty-printed document is at least as common as one logged as a line.
+
+  `AGENT_LOOP` also joins the CLI's known codes and `OPTION_FOR`, so `calibrate`
+  parses those samples and suggests `maxAgentLoop` rather than reporting a
+  distribution with no knob attached.
+
+  Two things `docs/calibration.md` now says that the report cannot. **Read the
+  `gap` line, not the percentiles**: `AGENT_LOOP` is bimodal in a way the prose
+  detectors are not, so `p99` on healthy-heavy traffic reads 0.000 right up until
+  it reads 1.000. And a trace corpus scraped from production is **survivor-biased
+  against this detector** — if you already kill runs at a turn limit, every loop
+  in your logs is truncated at that limit and scores lower than the same loop left
+  to run, so the suggestion is tuned to loops you interrupted rather than loops
+  you would have paid for.
+
+### Patch Changes
+
+- e4abf07: `./openai` reads `toolCalls` as well as `tool_calls`, which fixes a total
+  failure against Mistral's SDK.
+
+  `tool_calls` is the wire protocol, and what Groq, Together, OpenRouter,
+  Fireworks, vLLM and Ollama's compatibility endpoint all send. Mistral's
+  generated SDK renames it to `toolCalls` on the way out.
+
+  **That rename did not degrade the guard, it inverted it.** A tool-calling turn
+  carries no prose, so a message whose call list went unrecognised read as
+  `content: ''` — and the empty string scores `EMPTY: 1`:
+
+  ```ts
+  // every tool-calling turn from a Mistral client, before this release
+  const client = withOutputGuard(new Mistral(), {
+    ...presets.chat,
+    onDegenerate: "abort",
+  });
+  await client.chat.completions.create(params); // throws DegenerateOutputError
+  ```
+
+  That is `internal/tool-calls.ts`'s founding bug reintroduced for one provider by
+  a spelling, and invisible to every fixture in the corpus, all of which are
+  prose. It affected `withOutputGuard`, `checkToolArguments` and `toTurn` alike,
+  because all three read the same list — so all three now go through one helper.
+
+  Reading both spellings is safe rather than merely convenient: no response in the
+  OpenAI family carries both fields, so there is nothing to disambiguate and no
+  shape where the extra read changes an existing answer.
+
+  `test/openai-alikes.test.ts` now pins the whole table — which provider envelopes
+  map fully, which map to nothing — and the invariant that matters more than the
+  table: **there is no partial outcome.** A turn with its text read and its calls
+  missed fingerprints by its preamble prose rather than its arguments, so an agent
+  reusing one preamble across twenty files would read as a total collapse. That is
+  a false positive on a healthy run, and it is how this bug would have surfaced in
+  `AGENT_LOOP` had the `EMPTY` failure not surfaced it first.
+
 ## 1.9.0
 
 ### Minor Changes
