@@ -204,6 +204,22 @@ name still reads normally.
 
 Three identical polls sit under the floor without any of this. Four do not.
 
+## Calibrate it against your own runs
+
+`maxAgentLoop: 0.4` is tuned on this repo's eighteen agent fixtures, which are
+not your traffic and are thinner than any other corpus here. `check --trace`
+scores runs the way `check` scores responses, so the same calibration loop
+closes over them:
+
+```bash
+npx llm-output-guard check runs.jsonl --trace --json \
+  | npx llm-output-guard calibrate --fpr 0.001
+```
+
+**[docs/calibration.md](calibration.md#calibrating-agent_loop-from-your-own-runs)**
+— including why the `gap` line matters more for this detector than the
+percentiles, and the survivor bias a scraped trace corpus carries.
+
 ## The gap: circling without repeating
 
 **An agent that returns to one failing call between other work is not

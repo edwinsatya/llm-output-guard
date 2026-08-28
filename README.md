@@ -242,6 +242,13 @@ responses you already have, then derive thresholds you can defend:
 npx llm-output-guard check logs/*.txt --json | npx llm-output-guard calibrate --fpr 0.001
 ```
 
+Agent runs calibrate the same way — `--trace` reads one run per line and scores
+`AGENT_LOOP` instead of the per-response detectors:
+
+```bash
+npx llm-output-guard check runs.jsonl --trace --json | npx llm-output-guard calibrate
+```
+
 `check` also works as a CI assertion — it exits 1 when anything is degenerate,
 2 when the input cannot be read.
 

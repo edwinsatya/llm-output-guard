@@ -9,6 +9,12 @@
 import { readFileSync } from 'node:fs';
 import { calibrate, type ScoreSample } from './calibrate.js';
 import { checkOutput } from './check.js';
+import { checkTrace } from './agent.js';
+import type { AgentTurn } from './agent-types.js';
+import { toTurn as fromOpenAI } from './openai.js';
+import { toTurn as fromAnthropic } from './anthropic.js';
+import { toTurn as fromGemini } from './google.js';
+import { toTurn as fromAiSdk } from './ai-sdk.js';
 import { presets } from './presets.js';
 import type { CheckOptions, ReasonCode, TokenMode, Verdict } from './types.js';
 
@@ -23,6 +29,7 @@ const CODES: ReasonCode[] = [
   'SCRIPT_MISMATCH',
   'LANG_MISMATCH',
   'PROMPT_ECHO',
+  'AGENT_LOOP',
 ];
 
 /**
@@ -43,6 +50,7 @@ const OPTION_FOR: Partial<Record<ReasonCode, string>> = {
   SCRIPT_MISMATCH: 'maxScriptMismatch',
   LANG_MISMATCH: 'maxLangMismatch',
   PROMPT_ECHO: 'maxPromptEcho',
+  AGENT_LOOP: 'maxAgentLoop',
 };
 
 /**
@@ -219,6 +227,87 @@ export function extractText(value: unknown): string | null {
   return null;
 }
 
+/**
+ * One logged agent turn, whatever it was logged as.
+ *
+ * Liberal for the same reason {@link extractText} is: the calibration step you
+ * have to reshape your logs for is the one you never run. A turn already in
+ * `AgentTurn` shape passes through; a raw provider envelope is mapped by that
+ * provider's own `toTurn`, so the CLI reads exactly what the library reads and
+ * cannot drift from it.
+ *
+ * **Precedence matters and is asserted in the tests.** `AgentTurn` is checked
+ * first because it overlaps the AI SDK's flat shape -- both spell the list
+ * `toolCalls` -- and the AI SDK mapper reads `input`/`args` where an
+ * `AgentTurn` holds `arguments`, so mapping a native turn through it would
+ * silently drop every argument and fingerprint the run by tool name alone.
+ */
+export function extractTurn(value: unknown): AgentTurn | null {
+  if (!value || typeof value !== 'object') {
+    return typeof value === 'string' && value.length > 0 ? { text: value } : null;
+  }
+  const record = value as Record<string, unknown>;
+
+  // Already a turn: a `toolCalls` list whose entries speak `name`/`arguments`.
+  if (Array.isArray(record.toolCalls)) {
+    const calls = record.toolCalls as Array<Record<string, unknown>>;
+    const native = calls.every(
+      (call) => call == null || typeof call !== 'object' ||
+        !('toolName' in call || 'input' in call || 'args' in call),
+    );
+    if (native) {
+      return {
+        text: typeof record.text === 'string' ? record.text : '',
+        toolCalls: calls.map((call) => ({
+          name: typeof call?.name === 'string' ? call.name : undefined,
+          arguments: call?.arguments,
+        })),
+      };
+    }
+    return fromAiSdk(record);
+  }
+
+  if (Array.isArray(record.choices)) return fromOpenAI(record);
+  if (Array.isArray(record.candidates)) return fromGemini(record);
+  if (Array.isArray(record.output) || typeof record.output_text === 'string') {
+    return fromOpenAI(record);
+  }
+
+  /*
+   * `content` is the one field two providers share. A text block is spelled
+   * identically in both, so only a tool part separates them: the AI SDK
+   * prefixes its part types with `tool-`, Anthropic does not.
+   */
+  if (Array.isArray(record.content)) {
+    const parts = record.content as Array<{ type?: unknown }>;
+    const aiSdk = parts.some(
+      (part) => typeof part?.type === 'string' && part.type.startsWith('tool-'),
+    );
+    return aiSdk ? fromAiSdk(record) : fromAnthropic(record);
+  }
+
+  if (typeof record.text === 'string') return { text: record.text };
+  return null;
+}
+
+/**
+ * The turns of one logged run, or `null` when the line holds none.
+ *
+ * A bare array of turns, or an object carrying them under `turns` -- which is
+ * what a log record wrapping a run looks like.
+ */
+export function extractTurns(value: unknown): AgentTurn[] | null {
+  const list = Array.isArray(value)
+    ? value
+    : value && typeof value === 'object' && Array.isArray((value as { turns?: unknown }).turns)
+      ? ((value as { turns: unknown[] }).turns)
+      : null;
+  if (!list) return null;
+
+  const turns = list.map(extractTurn).filter((turn): turn is AgentTurn => turn !== null);
+  return turns.length > 0 ? turns : null;
+}
+
 interface CheckedItem {
   label: string;
   verdict: Verdict;
@@ -236,7 +325,9 @@ function describe(item: CheckedItem): string {
 
 function runCheck(args: string[]): Promise<number> | number {
   const asJson = args.includes('--json');
-  const asJsonl = args.includes('--jsonl');
+  const asTrace = args.includes('--trace');
+  // A trace is a run per line, so it is JSONL by nature.
+  const asJsonl = args.includes('--jsonl') || asTrace;
   const quiet = args.includes('--quiet');
 
   let preset: CheckOptions = presets.chat;
@@ -264,9 +355,49 @@ function runCheck(args: string[]): Promise<number> | number {
      * is one response; under `--jsonl` every non-blank line is one.
      */
     const items: Array<{ label: string; text: string }> = [];
+    const traces: Array<{ label: string; turns: AgentTurn[] }> = [];
     let unrecognised = 0;
 
+    /*
+     * A run per line, plus one convenience: a file that parses whole as a
+     * single trace is read as one run. Logging a run as one pretty-printed
+     * array is at least as common as logging it as a line, and failing on it
+     * would send people away to reshape their input -- which is the thing this
+     * command exists not to require.
+     */
+    const ingestTrace = (label: string, raw: string): void => {
+      try {
+        const whole = extractTurns(JSON.parse(raw));
+        if (whole) {
+          traces.push({ label, turns: whole });
+          return;
+        }
+      } catch {
+        // Not one JSON document. Fall through to line-by-line.
+      }
+      let lineNo = 0;
+      for (const line of raw.split('\n')) {
+        lineNo += 1;
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(trimmed);
+        } catch {
+          unrecognised += 1;
+          continue;
+        }
+        const turns = extractTurns(parsed);
+        if (turns === null) unrecognised += 1;
+        else traces.push({ label: `${label}:${lineNo}`, turns });
+      }
+    };
+
     const ingest = (label: string, raw: string): void => {
+      if (asTrace) {
+        ingestTrace(label, raw);
+        return;
+      }
       if (!asJsonl) {
         items.push({ label, text: raw });
         return;
@@ -297,19 +428,25 @@ function runCheck(args: string[]): Promise<number> | number {
       return 2;
     }
 
-    if (items.length === 0) {
+    if (items.length === 0 && traces.length === 0) {
       process.stderr.write(
         unrecognised > 0
-          ? `No response text found in ${unrecognised} line(s). See --help for the shapes read.\n`
+          ? `No ${asTrace ? 'agent turns' : 'response text'} found in ${unrecognised} line(s). ` +
+            'See --help for the shapes read.\n'
           : 'No input. Pass a file, or pipe text on stdin.\n',
       );
       return 2;
     }
 
-    const checked: CheckedItem[] = items.map(({ label, text }) => ({
-      label,
-      verdict: checkOutput(text, preset),
-    }));
+    const checked: CheckedItem[] = asTrace
+      ? traces.map(({ label, turns }) => ({
+          label: `${label} (${turns.length} turns)`,
+          verdict: checkTrace(turns),
+        }))
+      : items.map(({ label, text }) => ({
+          label,
+          verdict: checkOutput(text, preset),
+        }));
 
     if (asJson) {
       for (const { label, verdict } of checked) {
@@ -319,7 +456,8 @@ function runCheck(args: string[]): Promise<number> | number {
       for (const item of checked) process.stdout.write(describe(item) + '\n');
       const failed = checked.filter((c) => !c.verdict.ok).length;
       process.stdout.write(
-        `\n  ${checked.length} checked under presets.${presetName}, ` +
+        `\n  ${checked.length} ${asTrace ? 'run(s)' : 'checked'}` +
+          (asTrace ? '' : ` under presets.${presetName}`) + `, ` +
           `${failed} degenerate` +
           (unrecognised > 0 ? `, ${unrecognised} line(s) unrecognised` : '') +
           '\n',
@@ -345,6 +483,7 @@ llm-output-guard check — score responses you already have
 Options
   --preset <name>  chat | strictJson | longForm | lenient (default chat)
   --jsonl          read input as JSONL, one logged response per line
+  --trace          read input as agent runs, one run per line
   --json           emit a verdict per response as JSONL, for calibrate
   --quiet          no per-response output; the exit code is the answer
 
@@ -359,9 +498,21 @@ string, an obvious field, or a raw provider envelope all work:
   {"choices":[{"message":{"content":"the response text"}}]}
   {"content":[{"type":"text","text":"the response text"}]}
 
+Under --trace each line is one agent run rather than one response, scored for
+AGENT_LOOP instead of the per-response detectors. A run is a list of turns, on
+its own or under a "turns" key, and each turn is read as liberally as above --
+a native turn, or the raw envelope from any adapter this package ships:
+
+  [{"text":"Reading.","toolCalls":[{"name":"read_file","arguments":{"p":"a.ts"}}]}]
+  {"run":"job-14","turns":[{"choices":[{"message":{"content":"..."}}]}]}
+
+A file that parses whole as one array is read as a single run, so a run logged
+as one pretty-printed document works without reshaping.
+
 The two commands are halves of one loop:
 
   llm-output-guard check logs/*.txt --json | llm-output-guard calibrate
+  llm-output-guard check runs.jsonl --trace --json | llm-output-guard calibrate
 
 llm-output-guard calibrate — derive thresholds from your own logged scores
 

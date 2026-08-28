@@ -130,6 +130,59 @@ when you have one detector's numbers already grouped.
 **Read `caveats` before `suggested`.** It is where a sample too small for the
 requested rate says so, and a `suggested` number carries no warning of its own.
 
+## Calibrating `AGENT_LOOP` from your own runs
+
+`maxAgentLoop` defaults to **0.4**, and of every threshold this package ships it
+is the one resting on the least evidence: eighteen fixtures written in one
+sitting, none of them from a real agent. The separation on that corpus is clean
+— every healthy run 0.000, the weakest degenerate one 0.455 — but it is clean
+against cases chosen by someone who knew what the detector does. Yours are not.
+
+`check --trace` scores runs the way `check` scores responses, so the same loop
+closes:
+
+```bash
+npx llm-output-guard check runs.jsonl --trace --json \
+  | npx llm-output-guard calibrate --fpr 0.001
+```
+
+Each line of `runs.jsonl` is one run: a list of turns, on its own or under a
+`turns` key. Turns are read as liberally as responses are — a native
+`AgentTurn`, or the raw envelope from any provider this package adapts, so
+whatever your agent already logs is probably already the right shape:
+
+```jsonl
+[{"text":"Reading.","toolCalls":[{"name":"read_file","arguments":{"path":"a.ts"}}]}]
+{"run":"job-14","turns":[{"choices":[{"message":{"content":"…"}}]}]}
+```
+
+A file that parses whole as one array is read as a single run, so a run logged
+as one pretty-printed document needs no reshaping either.
+
+The report is the one you already know, reading the axis it measured:
+
+```
+AGENT_LOOP   n=43
+  p50 0.000   p90 0.000   p99 1.000   p99.9 1.000   max 1.000
+  gap 0.000 -> 1.000  (3 above, 6.98% of traffic)
+  suggest maxAgentLoop: 0.500
+```
+
+**A `gap` line is worth more here than anywhere else in this document.**
+`AGENT_LOOP` is bimodal in a way the prose detectors are not: a run is circling
+or it is not, and the scores pile up at 0.000 and near 1.000 with nothing in
+between. That makes the gap easy to find and a percentile nearly meaningless —
+`p99` on healthy-heavy traffic is 0.000 right up until it is 1.000. Read the
+gap, not the percentile, and confirm the runs above it really were stuck before
+you move the number.
+
+One caution the report cannot give you. A trace corpus scraped from production
+is **survivor-biased against this detector**: if you already kill runs at a turn
+limit, every loop in your logs is truncated at that limit, and the coverage
+score of a truncated loop is lower than the same loop left to run. Calibrating
+on it suggests a threshold tuned to loops you interrupted rather than loops you
+would have paid for.
+
 ## On thresholds
 
 A miss is annoying. **A false positive is worse**: a healthy response gets discarded and retried against a slower provider for nothing.
