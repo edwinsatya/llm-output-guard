@@ -17,6 +17,8 @@ import type { AdapterGuardOptions, DegenerateAction } from './internal/adapter-o
 import type { GuardedPath, Surface } from './internal/proxy-guard.js';
 import { guardClient } from './internal/proxy-guard.js';
 import { promptFromMessages, withSystem } from './internal/prompt-text.js';
+import type { AgentTurn } from './agent-types.js';
+import { asArray } from './internal/as-array.js';
 
 export type { DegenerateAction };
 
@@ -25,6 +27,8 @@ interface ContentBlock {
   type?: string;
   /** Present on `text` blocks. */
   text?: string;
+  /** Present on tool blocks. Read only by {@link toTurn}. */
+  name?: string;
   /**
    * Present on `tool_use` blocks, already parsed into an object rather than
    * left as the JSON string OpenAI sends. `argumentsToText` serialises it back
@@ -199,4 +203,33 @@ const GUARDED: readonly GuardedPath[] = [{ path: ['messages', 'create'], surface
  */
 export function withOutputGuard<T extends object>(client: T, options: OutputGuardOptions = {}): T {
   return guardClient(client, GUARDED, options);
+}
+
+/**
+ * One `messages.create` result as an {@link AgentTurn}, for
+ * `llm-output-guard/agent`.
+ *
+ * `input` arrives already parsed, where OpenAI sends a JSON string. Both
+ * fingerprint identically -- `canonicalArguments` parses the string before
+ * canonicalising -- so a trace assembled from mixed providers still compares.
+ *
+ * Tool blocks are selected with the adapter's own `isToolBlock`, so this counts
+ * exactly what puts the guard into preamble mode: `tool_use` and every server
+ * tool beside it. Thinking blocks are neither text nor a call, and contribute
+ * nothing -- reading them as text would fingerprint a turn by its reasoning,
+ * which varies even when the action taken is identical, and that is how a real
+ * loop scores zero.
+ */
+export function toTurn(message: unknown): AgentTurn {
+  if (message == null || typeof message !== 'object') return {};
+  const content = asArray<ContentBlock>((message as MessageLike).content);
+  return {
+    text: content
+      .filter((block) => block.type === 'text')
+      .map((block) => block.text ?? '')
+      .join(''),
+    toolCalls: content
+      .filter(isToolBlock)
+      .map((block) => ({ name: block.name, arguments: block.input })),
+  };
 }

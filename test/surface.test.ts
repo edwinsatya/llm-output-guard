@@ -71,11 +71,18 @@ describe('public surface', () => {
     expect(names(root)).not.toContain('findGap');
   });
 
-  it('exports one function from each adapter subpath', () => {
-    expect(names(aiSdk)).toEqual(['outputGuard']);
-    expect(names(openai)).toEqual(['withOutputGuard']);
-    expect(names(anthropic)).toEqual(['withOutputGuard']);
-    expect(names(google)).toEqual(['withOutputGuard']);
+  /**
+   * Two each: the guard, and the turn mapper `./agent` needs.
+   *
+   * `toTurn` lives beside the surface it mirrors rather than in `./agent`,
+   * because it is provider knowledge and `./agent` is deliberately provider
+   * neutral. Same name from every subpath, exactly as `withOutputGuard` is.
+   */
+  it('exports the guard and the turn mapper from each adapter subpath', () => {
+    expect(names(aiSdk)).toEqual(['outputGuard', 'toTurn']);
+    expect(names(openai)).toEqual(['toTurn', 'withOutputGuard']);
+    expect(names(anthropic)).toEqual(['toTurn', 'withOutputGuard']);
+    expect(names(google)).toEqual(['toTurn', 'withOutputGuard']);
   });
 
   /**

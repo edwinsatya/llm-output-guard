@@ -25,6 +25,8 @@ import type { AdapterGuardOptions, DegenerateAction } from './internal/adapter-o
 import type { GuardedPath, Surface } from './internal/proxy-guard.js';
 import { guardClient } from './internal/proxy-guard.js';
 import { promptFromMessages, withSystem } from './internal/prompt-text.js';
+import type { AgentTurn } from './agent-types.js';
+import { asArray } from './internal/as-array.js';
 
 export type { DegenerateAction };
 
@@ -295,4 +297,30 @@ const GUARDED: readonly GuardedPath[] = [
  */
 export function withOutputGuard<T extends object>(client: T, options: OutputGuardOptions = {}): T {
   return guardClient(client, GUARDED, options);
+}
+
+/**
+ * One `generateContent` response as an {@link AgentTurn}, for
+ * `llm-output-guard/agent`.
+ *
+ * Reads the same two things differently than a naive mapping would, for the
+ * reasons the adapter above already establishes: **thought summaries are not
+ * the answer** and are excluded, and **only the first candidate is read**,
+ * because `candidateCount > 1` offers alternatives to one question and an agent
+ * feeds exactly one of them onward.
+ *
+ * `executableCode` counts as a call beside `functionCall`, matching
+ * `isToolPart` -- code the model wrote to run is an action it took, and an
+ * agent that keeps writing the same snippet is looping in the way this detects.
+ */
+export function toTurn(response: unknown): AgentTurn {
+  if (response == null || typeof response !== 'object') return {};
+  const parts = asArray<PartLike>(partsOf(response));
+  return {
+    text: parts.filter(isAnswerText).map((part) => part.text ?? '').join(''),
+    toolCalls: parts.filter(isToolPart).map((part) => ({
+      name: part.functionCall?.name,
+      arguments: part.functionCall?.args ?? part.executableCode,
+    })),
+  };
 }

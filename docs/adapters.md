@@ -293,6 +293,20 @@ them would describe your agent's tool use rather than any degeneration.
 
 [← Back to the README](../README.md) · [Try the playground](https://edwinsatya.github.io/llm-output-guard/)
 
+## Building an agent turn
+
+Every subpath above also exports `toTurn`, which maps that provider's response
+onto the shape `llm-output-guard/agent` reads:
+
+```ts
+import { toTurn } from 'llm-output-guard/openai';
+guard.observe(toTurn(completion));
+```
+
+It carries the same provider knowledge the guard beside it does — thought parts
+excluded on Gemini, thinking blocks on Anthropic, first choice or candidate
+only. **[docs/agent-loops.md](agent-loops.md#building-a-turn-from-your-provider)**
+
 ## Tool-call arguments
 
 A tool-calling turn is judged by its preamble — the text beside the call — because

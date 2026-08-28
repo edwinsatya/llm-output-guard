@@ -13,6 +13,8 @@ import type { AdapterGuardOptions, DegenerateAction } from './internal/adapter-o
 import type { GuardedPath, Surface } from './internal/proxy-guard.js';
 import { guardClient } from './internal/proxy-guard.js';
 import { promptFromMessages, withSystem } from './internal/prompt-text.js';
+import type { AgentTurn } from './agent-types.js';
+import { asArray } from './internal/as-array.js';
 
 export type { DegenerateAction };
 
@@ -21,7 +23,7 @@ interface MessageLike {
   content?: string | null;
   tool_calls?: ToolCallLike[] | null;
   /** The pre-`tool_calls` spelling. Still returned by older gateways. */
-  function_call?: { arguments?: unknown } | null;
+  function_call?: { name?: string; arguments?: unknown } | null;
 }
 
 /**
@@ -30,7 +32,7 @@ interface MessageLike {
  * measuring.
  */
 interface ToolCallLike {
-  function?: { arguments?: unknown } | null;
+  function?: { name?: string; arguments?: unknown } | null;
 }
 
 /** One choice of a non-streaming `chat.completions.create`. */
@@ -56,6 +58,8 @@ interface ChunkLike {
 /** One item of a Responses API `output` array. */
 interface OutputItem {
   type?: string;
+  /** Present on tool-call items. Read only by {@link toTurn}. */
+  name?: string;
   /** Present on `message` items. */
   content?: Array<{ type?: string; text?: string }> | null;
   /**
@@ -268,4 +272,58 @@ const GUARDED: readonly GuardedPath[] = [
  */
 export function withOutputGuard<T extends object>(client: T, options: OutputGuardOptions = {}): T {
   return guardClient(client, GUARDED, options);
+}
+
+/**
+ * One response as an {@link AgentTurn}, for `llm-output-guard/agent`.
+ *
+ * Both APIs are accepted -- a `chat.completions` completion and a `responses`
+ * result -- discriminated on `choices`, which only the former has.
+ *
+ * ## Why this exists rather than a line of user code
+ *
+ * Building the turn by hand is four lines, and one of them is
+ * `call.function.arguments`. Reach into the wrong field and every turn
+ * fingerprints differently, so `AGENT_LOOP` scores 0.000 for the life of the
+ * process and reports a guard that never ran. That is the same shape of bug as
+ * the `.catch()` hole fixed in 1.8.0: not a wrong answer, an absent one, and
+ * invisible precisely because nothing fails.
+ *
+ * ## Only the first choice, unlike the guard beside it
+ *
+ * `withOutputGuard` joins every choice, because it is asking whether the
+ * *response* degenerated. A turn is a different question: `n > 1` asks for
+ * alternatives to one question and an agent feeds exactly one of them back into
+ * the conversation. Concatenating them would fingerprint a turn that never
+ * happened -- and fingerprint it unstably, since which alternatives arrive
+ * varies per call. Same reasoning as `./google` reading only the first
+ * candidate.
+ */
+export function toTurn(response: unknown): AgentTurn {
+  if (response == null || typeof response !== 'object') return {};
+
+  const choices = (response as CompletionLike).choices;
+  if (Array.isArray(choices)) {
+    const message = choices[0]?.message;
+    return {
+      text: message?.content ?? '',
+      toolCalls: [
+        ...asArray<ToolCallLike>(message?.tool_calls).map((call) => ({
+          name: call?.function?.name,
+          arguments: call?.function?.arguments,
+        })),
+        ...(message?.function_call
+          ? [{ name: message.function_call.name, arguments: message.function_call.arguments }]
+          : []),
+      ],
+    };
+  }
+
+  const output = asArray<OutputItem>((response as ResponseLike).output);
+  return {
+    text: RESPONSES.text({ ...(response as ResponseLike), output: output.length ? output : null }),
+    toolCalls: output
+      .filter(isToolCallItem)
+      .map((item) => ({ name: item.name, arguments: item.arguments })),
+  };
 }

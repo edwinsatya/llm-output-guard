@@ -38,6 +38,51 @@ the other.
 `checkTrace(turns)` is the same check without the retained state, for a trace
 you already have in hand — a replay, a stored transcript, an offline audit.
 
+## Building a turn from your provider
+
+Every adapter subpath exports `toTurn`, which maps that provider's response onto
+the `AgentTurn` shape:
+
+```ts
+import { toTurn } from 'llm-output-guard/openai';     // chat.completions and responses
+import { toTurn } from 'llm-output-guard/anthropic';  // messages.create
+import { toTurn } from 'llm-output-guard/google';     // generateContent
+import { toTurn } from 'llm-output-guard/ai-sdk';     // generateText
+```
+
+**Use it rather than mapping by hand**, and the reason is the failure mode
+rather than the four lines saved. Reach into the wrong field — `arguments`
+instead of `function.arguments`, `args` instead of `input` — and nothing
+throws, nothing warns and no score rises. Every turn fingerprints differently,
+so `AGENT_LOOP` reports 0.000 for the life of the process and you have a guard
+you believe in and do not have. That is the same shape as the `.catch()` hole
+fixed in 1.8.0, one layer up.
+
+Each mapper carries the provider knowledge the adapter beside it already had:
+
+| | Reads |
+|---|---|
+| `./openai` | Both APIs, discriminated on `choices`. The legacy `function_call` spelling too. **First choice only** |
+| `./anthropic` | `tool_use` and every server tool. Thinking blocks are neither text nor a call |
+| `./google` | Thought summaries excluded. **First candidate only**. `executableCode` counts as a call |
+| `./ai-sdk` | The `content` parts array, or the flat `{ text, toolCalls }`. `input` and the older `args` |
+
+Two of those say *first only*. `n > 1` and `candidateCount > 1` ask for
+alternatives to one question, and an agent feeds exactly one of them onward —
+so fingerprinting the concatenation would describe a turn that never happened,
+and describe it unstably. `withOutputGuard` joins them all, because it is asking
+a different question: whether the response degenerated, not what the agent did.
+
+The Anthropic note is the one that bites hardest in practice. Two turns whose
+reasoning differs and whose *action* is identical are the same turn — an agent
+retrying `run_tests` with a fresh rationalisation each time is looping. Reading
+thinking as text would score that at zero.
+
+A mapper never throws. Anything it does not recognise maps to an empty turn,
+which the trace drops rather than counts — including a `content` that is a
+string, which is what a *request* message looks like and an easy thing to pass
+by mistake.
+
 ## What makes two turns the same turn
 
 A turn is reduced to one comparable fingerprint, and everything about the

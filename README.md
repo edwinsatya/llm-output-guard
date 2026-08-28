@@ -112,15 +112,22 @@ sequence.
 
 ```ts
 import { createAgentGuard } from 'llm-output-guard/agent';
+import { toTurn } from 'llm-output-guard/openai';
 
 const guard = createAgentGuard();
 
 while (!done) {
-  const response = await model.step();
-  const verdict = guard.observe({ text: response.text, toolCalls: response.toolCalls });
+  const completion = await client.chat.completions.create(params);
+  const verdict = guard.observe(toTurn(completion));
   if (!verdict.ok) break; // the run is circling; stop paying for it
 }
 ```
+
+`toTurn` ships from all four adapter subpaths and reads whatever that provider
+sends — a JSON-string argument from OpenAI, a parsed object from Anthropic,
+thought parts excluded on Gemini. Map a field by hand and get it wrong and
+nothing throws: every turn fingerprints differently, the score pins at 0.000,
+and you have a guard that never runs.
 
 `AGENT_LOOP` reads one axis nothing else here reads. It looks for an **exact**
 repeating cycle of turns, which is what keeps it off the shapes that dominate
@@ -261,7 +268,8 @@ the public surface was frozen export by export in that release.
 **The public API is** everything exported from `llm-output-guard`, plus
 `outputGuard` / `OutputGuardOptions` / `DegenerateAction` from `./ai-sdk`,
 `withOutputGuard` / `OutputGuardOptions` / `DegenerateAction` from `./openai`,
-`./anthropic` and `./google`, and `checkTrace` / `assertTrace` /
+`./anthropic` and `./google`, `toTurn` from each of those four, and
+`checkTrace` / `assertTrace` /
 `createAgentGuard` / `agentLoopScore` / `agentLoopDetail` from `./agent`. Each
 subpath is its own contract, so an option added to one is not
 a promise about the others. Anything else is internal and may move in any

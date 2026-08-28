@@ -16,6 +16,8 @@ import { createStreamGuard } from './stream.js';
 import { checkPreamble } from './internal/tool-calls.js';
 import { checkArguments, mergeVerdicts } from './internal/tool-arguments.js';
 import { promptFromMessages } from './internal/prompt-text.js';
+import type { AgentTurn } from './agent-types.js';
+import { asArray } from './internal/as-array.js';
 
 /** `'stop' | 'length' | ...` in older specs, `{ unified, raw }` in v4. */
 type FinishReasonLike = string | { unified?: string; raw?: string } | null | undefined;
@@ -280,5 +282,51 @@ export function outputGuard(options: OutputGuardOptions = {}) {
       // cast is the spread losing `T`, not a change in what is handed back.
       return { ...result, stream: guarded } as T;
     },
+  };
+}
+
+/**
+ * One `generateText` result as an {@link AgentTurn}, for
+ * `llm-output-guard/agent`.
+ *
+ * Both shapes the SDK has used are accepted, because a trace outlives an
+ * upgrade: the current `content` array of parts when it is present, and the
+ * flat `{ text, toolCalls }` otherwise. Within a tool call, `input` is the
+ * current spelling and `args` the older one, and either may arrive as an object
+ * or as the raw JSON string -- all four combinations canonicalise to the same
+ * fingerprint.
+ *
+ * Tool parts are matched by the `tool-` prefix rather than an exact list, the
+ * same rule the middleware uses: the spec has added part types across versions,
+ * and a part type added in a later major must not silently read as prose.
+ */
+export function toTurn(result: unknown): AgentTurn {
+  if (result == null || typeof result !== 'object') return {};
+
+  const value = result as {
+    text?: unknown;
+    content?: StreamPart[] | null;
+    toolCalls?: Array<{ toolName?: string; name?: string; input?: unknown; args?: unknown }> | null;
+  };
+
+  if (Array.isArray(value.content)) {
+    return {
+      text: value.content
+        .filter((part) => part.type === 'text')
+        .map((part) => part.text ?? '')
+        .join(''),
+      toolCalls: value.content.filter(isToolPart).map((part) => ({
+        name: (part as { toolName?: string }).toolName,
+        arguments: part.input ?? part.args,
+      })),
+    };
+  }
+
+  return {
+    text: typeof value.text === 'string' ? value.text : '',
+    toolCalls: asArray<NonNullable<typeof value.toolCalls>[number]>(value.toolCalls).map((call) => ({
+      name: call.toolName ?? call.name,
+      arguments: call.input ?? call.args,
+    })),
   };
 }
