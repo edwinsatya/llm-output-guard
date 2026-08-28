@@ -73,9 +73,12 @@ every detector, running on your own pasted output. No API key, no request.
 | `SCRIPT_MISMATCH` | Answered in the wrong alphabet | Share of letters outside expected scripts · opt-in |
 | `LANG_MISMATCH` | Wrong language, same alphabet | Function-word profile · opt-in |
 | `PROMPT_ECHO` | Returned your prompt instead of an answer | Share of output copied from the prompt · opt-in |
+| `AGENT_LOOP` | An agent run circling instead of advancing | Exact periodicity across turns · `llm-output-guard/agent` |
 
 Every detector runs even after one fails, so a verdict shows the whole picture
-rather than whichever check happened to be ordered first. Each returns **0–1, not
+rather than whichever check happened to be ordered first. All but the last read
+one response; `AGENT_LOOP` reads a *sequence* of them and comes from its own
+entry point, so `checkOutput` never returns it. Each returns **0–1, not
 a boolean** — you pick the line.
 
 **Full reference, with the measurements behind every default:

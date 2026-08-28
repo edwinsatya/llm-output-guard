@@ -307,6 +307,36 @@ It carries the same provider knowledge the guard beside it does — thought part
 excluded on Gemini, thinking blocks on Anthropic, first choice or candidate
 only. **[docs/agent-loops.md](agent-loops.md#building-a-turn-from-your-provider)**
 
+### What is covered
+
+| Provider | Maps | Via |
+|---|---|---|
+| OpenAI — `chat.completions` and `responses` | fully | `./openai` |
+| Anthropic | fully | `./anthropic` |
+| Google Gemini | fully | `./google` |
+| Vercel AI SDK | fully | `./ai-sdk` |
+| Groq, Together, OpenRouter, Fireworks, DeepInfra, vLLM | fully | `./openai` |
+| Ollama — OpenAI-compatible endpoint | fully | `./openai` |
+| Azure OpenAI | fully | `./openai` — it *is* the `openai` SDK |
+| Mistral SDK | fully | `./openai` — see below |
+| AWS Bedrock, Cohere, LangChain, Ollama's native `/api/chat` | **nothing** | not adapted |
+
+**Full, or nothing.** An unsupported envelope maps to an empty turn, which a
+trace drops. There is deliberately no partial outcome, and that is the invariant
+worth understanding: a turn with its text read and its calls missed
+fingerprints by its *preamble prose* instead of its arguments, so an agent that
+reuses one preamble while working through twenty files reads as a total
+collapse. A false positive on a healthy run is the failure this package treats
+as worse than a miss. The table is asserted in `test/openai-alikes.test.ts`.
+
+**Mistral is why that invariant is written down.** Its generated SDK renames
+`tool_calls` to `toolCalls`, and the rename broke more than the mapper: a
+tool-calling turn carries no prose, so an unrecognised call list left
+`content: ''` — which scores `EMPTY: 1`. Every tool call from a Mistral client
+aborted under `withOutputGuard`. Both spellings are now read everywhere the list
+is, which is safe rather than merely convenient: no response in the OpenAI
+family carries both fields, so there is nothing to disambiguate.
+
 ## Tool-call arguments
 
 A tool-calling turn is judged by its preamble — the text beside the call — because

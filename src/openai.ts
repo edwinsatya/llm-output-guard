@@ -22,6 +22,12 @@ export type { DegenerateAction };
 interface MessageLike {
   content?: string | null;
   tool_calls?: ToolCallLike[] | null;
+  /**
+   * The camelCase spelling. Mistral's own SDK emits this where the wire
+   * protocol -- and every other OpenAI-compatible client -- emits
+   * `tool_calls`. See {@link callsOf}.
+   */
+  toolCalls?: ToolCallLike[] | null;
   /** The pre-`tool_calls` spelling. Still returned by older gateways. */
   function_call?: { name?: string; arguments?: unknown } | null;
 }
@@ -144,15 +150,37 @@ const CHAT_COMPLETIONS: Surface = {
 
   toolArguments: (value) =>
     ((value as CompletionLike).choices ?? []).flatMap((choice) => [
-      ...(choice.message?.tool_calls ?? []).map((call) => call?.function?.arguments),
+      ...callsOf(choice.message).map((call) => call?.function?.arguments),
       // The legacy spelling carries one call rather than a list.
       ...(choice.message?.function_call ? [choice.message.function_call.arguments] : []),
     ]),
 };
 
-/** Tool calls on a chat message or a streamed delta, either spelling. */
+/**
+ * Every tool call on a message, under either spelling of the list.
+ *
+ * `tool_calls` is the wire protocol and what Groq, Together, OpenRouter,
+ * Fireworks, vLLM and Ollama's compatibility endpoint all send. Mistral's
+ * generated SDK renames it to `toolCalls` on the way out.
+ *
+ * **That rename broke the guard silently and totally.** A tool-calling turn
+ * carries no prose, so a message whose calls are not recognised reads as
+ * `content: ''` -- and the empty string scores `EMPTY: 1`. Every tool call from
+ * a Mistral client aborted, which is `tool-calls.ts`'s founding bug
+ * reintroduced by a spelling.
+ *
+ * Reading both is safe rather than merely convenient: no response in the
+ * OpenAI family carries both fields, so there is nothing to disambiguate and
+ * no shape where the extra read changes an existing answer.
+ */
+const callsOf = (message: MessageLike | null | undefined): ToolCallLike[] => [
+  ...asArray<ToolCallLike>(message?.tool_calls),
+  ...asArray<ToolCallLike>(message?.toolCalls),
+];
+
+/** Tool calls on a chat message or a streamed delta, any spelling. */
 const hasCall = (message: MessageLike | null | undefined): boolean =>
-  (message?.tool_calls?.length ?? 0) > 0 || message?.function_call != null;
+  callsOf(message).length > 0 || message?.function_call != null;
 
 const RESPONSES: Surface = {
   /*
@@ -308,7 +336,7 @@ export function toTurn(response: unknown): AgentTurn {
     return {
       text: message?.content ?? '',
       toolCalls: [
-        ...asArray<ToolCallLike>(message?.tool_calls).map((call) => ({
+        ...callsOf(message).map((call) => ({
           name: call?.function?.name,
           arguments: call?.function?.arguments,
         })),
