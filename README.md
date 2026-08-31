@@ -142,6 +142,10 @@ A turn carrying tool calls is judged by its **arguments**, never its prose —
 that is the difference between an agent working through a list and an agent
 stuck on one item.
 
+**[Try it on a run →](https://edwinsatya.github.io/llm-output-guard/)** — the
+playground has an *agent run* mode: pick a trace, see which turns form the
+cycle. The healthy traps are the half worth looking at.
+
 **[docs/agent-loops.md](docs/agent-loops.md)**
 
 ## The hard part is not catching loops

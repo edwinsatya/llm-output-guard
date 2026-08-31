@@ -16,6 +16,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import * as esbuild from 'esbuild';
 import { checkOutput, presets } from '../dist/index.js';
+import { checkTrace } from '../dist/agent.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const out = `${root}docs/index.html`;
@@ -70,6 +71,49 @@ function loadFixtures() {
 const fixtures = loadFixtures();
 
 /**
+ * The agent specimens.
+ *
+ * Chosen for what they teach rather than for coverage. The degenerate ones are
+ * the three shapes people picture -- a stuck call, a two-turn ping-pong, a run
+ * that worked and then stopped -- and the healthy ones are the traps, which are
+ * the persuasive half: every one of them looks like a loop and none of them is.
+ */
+const AGENT_PICK = {
+  degenerate: ['tool-same-args-x6', 'tool-cycle-ab-x4', 'tool-loop-after-progress', 'text-restate-x5'],
+  healthy: [
+    'batch-read-distinct-files', 'identical-preamble-distinct-args',
+    'alternating-with-progress', 'poll-status-three-times', 'same-tool-drifting-args',
+  ],
+};
+
+/**
+ * Agent traces, validated the way the prose specimens are.
+ *
+ * A specimen labelled degenerate that passes -- or a trap that fails -- is a
+ * page that teaches the wrong thing, so the build refuses rather than shipping
+ * it. There is no preset dimension here: `AGENT_LOOP` has one threshold and
+ * reads one axis.
+ */
+function loadAgentFixtures() {
+  const result = { degenerate: [], healthy: [] };
+  for (const [kind, ids] of Object.entries(AGENT_PICK)) {
+    const dir = `${root}test/fixtures/agent/${kind === 'degenerate' ? 'bad' : 'good'}`;
+    for (const id of ids) {
+      const f = JSON.parse(readFileSync(`${dir}/${id}.json`, 'utf8'));
+      const wantFail = kind === 'degenerate';
+      if (checkTrace(f.turns).ok === wantFail) {
+        throw new Error(`agent fixture ${id} does not behave as labelled`);
+      }
+      result[kind].push({ id: f.id ?? id, note: f.note ?? '', turns: f.turns });
+    }
+  }
+  return result;
+}
+
+const agentFixtures = loadAgentFixtures();
+
+
+/**
  * The library, bundled to a genuinely single file.
  *
  * Emphatically not `dist/index.js` with its export statements stripped. That
@@ -85,7 +129,22 @@ const fixtures = loadFixtures();
  */
 async function bundleLibrary() {
   const result = await esbuild.build({
-    entryPoints: [`${root}src/index.ts`],
+    /*
+     * A synthetic entry rather than `src/index.ts`, because the page needs the
+     * cross-turn detector and the root deliberately does not export it --
+     * `./agent` is its own subpath precisely so `AGENT_LOOP` stays out of the
+     * frozen root surface. Named re-exports rather than `export *`: both
+     * modules export `DegenerateOutputError`, and a star would collide.
+     */
+    stdin: {
+      contents: [
+        "export { checkOutput, presets } from './src/index.ts';",
+        "export { checkTrace } from './src/agent.ts';",
+        "export { agentLoopDetail } from './src/detectors/agent-loop.ts';",
+      ].join('\n'),
+      resolveDir: root,
+      loader: 'ts',
+    },
     bundle: true,
     splitting: false,
     format: 'esm',
@@ -333,6 +392,37 @@ const page = String.raw`<title>Degeneracy Bench</title>
   footer a:hover { text-decoration: underline; }
   footer a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
   .ver { font-family: var(--mono); font-size: 11.5px; margin-left: auto; }
+
+  .modes { display: flex; gap: 6px; margin: 18px 0 4px; }
+  .mode-tab {
+    font: inherit; font-size: 13px; padding: 7px 14px; cursor: pointer;
+    color: var(--muted); background: transparent;
+    border: 1px solid var(--line); border-radius: 999px;
+  }
+  .mode-tab[aria-pressed="true"] {
+    color: var(--bg); background: var(--fg); border-color: var(--fg);
+  }
+  .mode-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .turns { display: flex; flex-direction: column; gap: 3px; margin-bottom: 14px; }
+  .turn {
+    display: grid; grid-template-columns: 2.2em auto 1fr minmax(0, 15em); gap: 10px;
+    align-items: baseline;
+    font-family: var(--mono); font-size: 12px; padding: 4px 8px; border-radius: 4px;
+    border-left: 3px solid transparent; background: var(--panel-2, transparent);
+  }
+  .turn .n { color: var(--muted); }
+  .turn .what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .turn .args { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The preamble sits apart on purpose: on a tool-calling turn it is prose
+     beside the answer, and the whole rule is that it is never what a turn is
+     judged by. Seeing it identical while the arguments differ is the lesson. */
+  .turn .said {
+    color: var(--muted); font-size: 11px; font-style: italic; text-align: right;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .turn.in-cycle { border-left-color: var(--fail); background: color-mix(in srgb, var(--fail) 9%, transparent); }
+  .turn.in-cycle .what { color: var(--fail); }
 </style>
 
 <div class="wrap">
@@ -346,6 +436,10 @@ const page = String.raw`<title>Degeneracy Bench</title>
       <code>checkOutput</code> returns.
     </p>
     <div class="install"><span>$</span> npm i llm-output-guard</div>
+    <div class="modes" id="modes" role="group" aria-label="What to check">
+      <button type="button" class="mode-tab" id="mode-response" aria-pressed="true">One response</button>
+      <button type="button" class="mode-tab" id="mode-agent" aria-pressed="false">An agent run</button>
+    </div>
   </header>
 
   <div class="bench">
@@ -358,10 +452,12 @@ const page = String.raw`<title>Degeneracy Bench</title>
         <div>
           <div class="group-label">Degenerate &mdash; should be caught</div>
           <div class="chips" id="chips-bad"></div>
+          <div class="chips" id="chips-agent-bad" hidden></div>
         </div>
         <div>
           <div class="group-label">Healthy traps &mdash; should <em>not</em> be caught</div>
           <div class="chips" id="chips-good"></div>
+          <div class="chips" id="chips-agent-good" hidden></div>
         </div>
         <textarea id="input" spellcheck="false" aria-label="Model output to check"></textarea>
         <p class="note" id="note"></p>
@@ -379,6 +475,7 @@ const page = String.raw`<title>Degeneracy Bench</title>
           <span class="verdict-text" id="verdict-text">ok</span>
           <span class="verdict-codes" id="verdict-codes"></span>
         </div>
+        <div class="turns" id="turns" hidden></div>
         <div class="meters" id="meters"></div>
         <div class="legend">
           <span><i class="k-tick"></i>threshold</span>
@@ -409,7 +506,14 @@ const page = String.raw`<title>Degeneracy Bench</title>
         provider is worse. That is why the corpus carries traps &mdash; markdown tables, repeated
         list prefixes, rhetorical refrains &mdash; that a naive detector flags.</p>
     </div>
-    <div class="card">
+    <div class="card" id="card-agent" hidden>
+      <h3>Judged by arguments, never prose</h3>
+      <p>A turn that calls a tool is compared by <em>what it called and with what</em> &mdash;
+        the preamble on the right is ignored. That is the whole difference between an agent
+        working through a list and an agent stuck on one item, and why a run whose every
+        sentence is identical can still score <code>0.000</code>.</p>
+    </div>
+    <div class="card" id="card-modes">
       <h3>Word and character modes</h3>
       <p>Chinese, Japanese and Thai put no spaces between words, so a whole clause is one
         token and word n&#8209;grams measure nothing. <code>TAIL_LOOP</code> switches to
@@ -429,6 +533,7 @@ const page = String.raw`<title>Degeneracy Bench</title>
 __LIB__
 
 const FIXTURES = __FIXTURES__;
+const AGENT_FIXTURES = __AGENT_FIXTURES__;
 
 /* Thresholds per code. A verdict carries one only for detectors that failed, so
    the passing ones are derived from the same options checkOutput was given --
@@ -508,7 +613,7 @@ function buildPresets() {
   });
 }
 
-function run() {
+function runResponse() {
   const text = $('input').value;
   const opts = presets[activePreset];
   const verdict = checkOutput(text, opts);
@@ -596,6 +701,180 @@ function run() {
       : '<span class="c">// verdict.ok === false — ' + verdict.reasons.map((r) => r.code).join(', ') + '</span>');
 }
 
+/* ---------------------------------------------------------------- agent mode */
+
+let mode = 'response';
+let activeTrace = null;
+
+/** What a turn did, for the strip. Never used for comparison -- see the docs. */
+function labelOf(turn) {
+  const calls = (turn && turn.toolCalls) || [];
+  const text = (turn && turn.text) || '';
+  if (calls.length === 0) return { what: 'prose', args: text, said: '' };
+  return {
+    what: calls.map((c) => c.name || '(unnamed)').join(' + '),
+    args: calls.map((c) => {
+      const a = c.arguments;
+      const serialised = typeof a === 'string' ? a : JSON.stringify(a);
+      return serialised === undefined ? '' : serialised;
+    }).join(' '),
+    /* Quoted so it reads as something the model said rather than as data. */
+    said: text ? '\u201c' + text + '\u201d' : '',
+  };
+}
+
+function parseTrace(text) {
+  try {
+    const value = JSON.parse(text);
+    if (Array.isArray(value)) return value;
+    if (value && Array.isArray(value.turns)) return value.turns;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function buildAgentChips(containerId, list, kind) {
+  const box = $(containerId);
+  list.forEach((f) => {
+    const b = el('button', 'chip', f.id);
+    b.type = 'button';
+    b.setAttribute('aria-pressed', 'false');
+    b.addEventListener('click', () => {
+      $('input').value = JSON.stringify(f.turns, null, 2);
+      activeTrace = { ...f, kind };
+      document.querySelectorAll('.chip').forEach((c) => c.setAttribute('aria-pressed', 'false'));
+      b.setAttribute('aria-pressed', 'true');
+      run();
+    });
+    box.appendChild(b);
+  });
+}
+
+function runAgent() {
+  const raw = $('input').value;
+  const turns = parseTrace(raw);
+
+  $('charcount').textContent = turns ? turns.length + ' turns' : 'not a trace';
+
+  const verdict = turns ? checkTrace(turns) : { ok: true, reasons: [], scores: {} };
+  const detail = turns ? agentLoopDetail(turns) : { score: 0, period: 0, repeats: 0, measured: 0, cycle: [] };
+
+  const v = $('verdict');
+  v.className = 'verdict ' + (verdict.ok ? 'ok' : 'bad');
+  $('verdict-text').textContent = !turns
+    ? 'paste a JSON array of turns'
+    : verdict.ok ? 'ok — the run is advancing' : 'circling';
+  $('verdict-codes').textContent = verdict.ok
+    ? (turns ? detail.measured + ' turns judged' : '')
+    : 'AGENT_LOOP  ' + detail.period + '-turn cycle x' + detail.repeats;
+
+  /* ---- the turn strip: where the cycle actually is ---- */
+  const strip = $('turns');
+  strip.hidden = false;
+  strip.textContent = '';
+  const list = turns || [];
+  /* The cycle sits at the end of what was measured, so the highlighted span is
+     the last period x repeats turns -- exact, not an approximation. */
+  const inCycle = detail.period > 0 ? detail.period * detail.repeats : 0;
+  list.forEach((turn, i) => {
+    const { what, args, said } = labelOf(turn);
+    const row = el('div', 'turn' + (i >= list.length - inCycle ? ' in-cycle' : ''));
+    row.append(
+      el('span', 'n', String(i + 1)),
+      el('span', 'what', what),
+      el('span', 'args', args),
+      el('span', 'said', said),
+    );
+    strip.appendChild(row);
+  });
+
+  /* ---- one meter, because there is one detector on this axis ---- */
+  const box = $('meters');
+  box.textContent = '';
+  const over = !verdict.ok;
+  const row = el('div', 'meter');
+  row.append(el('div', 'code', 'AGENT_LOOP'));
+  const track = el('div', 'track');
+  const fill = el('div', 'fill' + (over ? ' over' : ''));
+  fill.style.width = Math.max(0, Math.min(1, detail.score)) * 100 + '%';
+  track.appendChild(fill);
+  const tick = el('div', 'tick');
+  tick.style.left = '40%';
+  tick.title = 'threshold 0.4';
+  track.appendChild(tick);
+  const val = el('div', 'val' + (over ? ' over' : ''));
+  val.textContent = detail.score.toFixed(3);
+  row.append(track, val);
+  box.appendChild(row);
+
+  /* ---- note ---- */
+  const note = $('note');
+  note.textContent = '';
+  if (activeTrace && activeTrace.note) {
+    const wantFail = activeTrace.kind === 'bad';
+    const strong = el('b', null, wantFail ? 'Circling. ' : 'Healthy. ');
+    note.append(strong, document.createTextNode(activeTrace.note.replace(/^TRAP:\s*/i, '')));
+  } else {
+    note.textContent = 'Pick a run above, or paste a JSON array of turns.';
+  }
+
+  $('snippet').innerHTML =
+    '<span class="k">import</span> { createAgentGuard } <span class="k">from</span> <span class="s">&#39;llm-output-guard/agent&#39;</span>;\n' +
+    '<span class="k">import</span> { toTurn } <span class="k">from</span> <span class="s">&#39;llm-output-guard/openai&#39;</span>;\n' +
+    '\n' +
+    '<span class="k">const</span> verdict = guard.observe(toTurn(completion));\n' +
+    (verdict.ok
+      ? '<span class="c">// verdict.ok === true — keep going</span>'
+      : '<span class="c">// verdict.ok === false — AGENT_LOOP, stop paying for it</span>');
+}
+
+/** The one entry point, so a mode switch cannot leave half the page stale. */
+function run() {
+  return mode === 'agent' ? runAgent() : runResponse();
+}
+
+function setMode(next) {
+  mode = next;
+  const agent = next === 'agent';
+  $('mode-response').setAttribute('aria-pressed', String(!agent));
+  $('mode-agent').setAttribute('aria-pressed', String(agent));
+
+  $('chips-bad').hidden = agent;
+  $('chips-good').hidden = agent;
+  $('chips-agent-bad').hidden = !agent;
+  $('chips-agent-good').hidden = !agent;
+  /* Presets are a per-response contract; AGENT_LOOP has one threshold and reads
+     one axis, so the control is hidden rather than left there doing nothing. */
+  $('presets').hidden = agent;
+  $('turns').hidden = !agent;
+  $('card-agent').hidden = !agent;
+  $('card-modes').hidden = agent;
+
+  document.querySelectorAll('.chip').forEach((c) => c.setAttribute('aria-pressed', 'false'));
+  activeChip = null;
+  activeTrace = null;
+
+  if (agent) {
+    const first = AGENT_FIXTURES.degenerate[0];
+    $('input').value = JSON.stringify(first.turns, null, 2);
+    activeTrace = { ...first, kind: 'bad' };
+    document.querySelector('#chips-agent-bad .chip').setAttribute('aria-pressed', 'true');
+  } else {
+    const first = FIXTURES.degenerate[0];
+    $('input').value = first.text;
+    activeChip = { ...first, kind: 'bad' };
+    document.querySelector('#chips-bad .chip').setAttribute('aria-pressed', 'true');
+    setPreset(first.preset || 'chat');
+  }
+  run();
+}
+
+buildAgentChips('chips-agent-bad', AGENT_FIXTURES.degenerate, 'bad');
+buildAgentChips('chips-agent-good', AGENT_FIXTURES.healthy, 'good');
+$('mode-response').addEventListener('click', () => setMode('response'));
+$('mode-agent').addEventListener('click', () => setMode('agent'));
+
 buildChips('chips-bad', FIXTURES.degenerate, 'bad');
 buildChips('chips-good', FIXTURES.healthy, 'good');
 buildPresets();
@@ -620,6 +899,7 @@ writeFileSync(
   page
     .replace('__LIB__', () => lib)
     .replace('__FIXTURES__', () => JSON.stringify(fixtures))
+    .replace('__AGENT_FIXTURES__', () => JSON.stringify(agentFixtures))
     .replace('__VERSION__', pkg.version),
 );
 

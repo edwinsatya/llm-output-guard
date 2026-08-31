@@ -226,6 +226,37 @@
   footer a:hover { text-decoration: underline; }
   footer a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
   .ver { font-family: var(--mono); font-size: 11.5px; margin-left: auto; }
+
+  .modes { display: flex; gap: 6px; margin: 18px 0 4px; }
+  .mode-tab {
+    font: inherit; font-size: 13px; padding: 7px 14px; cursor: pointer;
+    color: var(--muted); background: transparent;
+    border: 1px solid var(--line); border-radius: 999px;
+  }
+  .mode-tab[aria-pressed="true"] {
+    color: var(--bg); background: var(--fg); border-color: var(--fg);
+  }
+  .mode-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .turns { display: flex; flex-direction: column; gap: 3px; margin-bottom: 14px; }
+  .turn {
+    display: grid; grid-template-columns: 2.2em auto 1fr minmax(0, 15em); gap: 10px;
+    align-items: baseline;
+    font-family: var(--mono); font-size: 12px; padding: 4px 8px; border-radius: 4px;
+    border-left: 3px solid transparent; background: var(--panel-2, transparent);
+  }
+  .turn .n { color: var(--muted); }
+  .turn .what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .turn .args { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The preamble sits apart on purpose: on a tool-calling turn it is prose
+     beside the answer, and the whole rule is that it is never what a turn is
+     judged by. Seeing it identical while the arguments differ is the lesson. */
+  .turn .said {
+    color: var(--muted); font-size: 11px; font-style: italic; text-align: right;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .turn.in-cycle { border-left-color: var(--fail); background: color-mix(in srgb, var(--fail) 9%, transparent); }
+  .turn.in-cycle .what { color: var(--fail); }
 </style>
 
 <div class="wrap">
@@ -239,6 +270,10 @@
       <code>checkOutput</code> returns.
     </p>
     <div class="install"><span>$</span> npm i llm-output-guard</div>
+    <div class="modes" id="modes" role="group" aria-label="What to check">
+      <button type="button" class="mode-tab" id="mode-response" aria-pressed="true">One response</button>
+      <button type="button" class="mode-tab" id="mode-agent" aria-pressed="false">An agent run</button>
+    </div>
   </header>
 
   <div class="bench">
@@ -251,10 +286,12 @@
         <div>
           <div class="group-label">Degenerate &mdash; should be caught</div>
           <div class="chips" id="chips-bad"></div>
+          <div class="chips" id="chips-agent-bad" hidden></div>
         </div>
         <div>
           <div class="group-label">Healthy traps &mdash; should <em>not</em> be caught</div>
           <div class="chips" id="chips-good"></div>
+          <div class="chips" id="chips-agent-good" hidden></div>
         </div>
         <textarea id="input" spellcheck="false" aria-label="Model output to check"></textarea>
         <p class="note" id="note"></p>
@@ -272,6 +309,7 @@
           <span class="verdict-text" id="verdict-text">ok</span>
           <span class="verdict-codes" id="verdict-codes"></span>
         </div>
+        <div class="turns" id="turns" hidden></div>
         <div class="meters" id="meters"></div>
         <div class="legend">
           <span><i class="k-tick"></i>threshold</span>
@@ -302,7 +340,14 @@
         provider is worse. That is why the corpus carries traps &mdash; markdown tables, repeated
         list prefixes, rhetorical refrains &mdash; that a naive detector flags.</p>
     </div>
-    <div class="card">
+    <div class="card" id="card-agent" hidden>
+      <h3>Judged by arguments, never prose</h3>
+      <p>A turn that calls a tool is compared by <em>what it called and with what</em> &mdash;
+        the preamble on the right is ignored. That is the whole difference between an agent
+        working through a list and an agent stuck on one item, and why a run whose every
+        sentence is identical can still score <code>0.000</code>.</p>
+    </div>
+    <div class="card" id="card-modes">
       <h3>Word and character modes</h3>
       <p>Chinese, Japanese and Thai put no spaces between words, so a whole clause is one
         token and word n&#8209;grams measure nothing. <code>TAIL_LOOP</code> switches to
@@ -409,9 +454,6 @@ function tailLoopDetail(text, options = {}) {
   }
   const tail = words(text).slice(-tailWords);
   return { score: periodicCoverage(tail, { maxPeriod, minRepeats }), mode };
-}
-function tailLoopScore(text, options = {}) {
-  return tailLoopDetail(text, options).score;
 }
 
 // src/detectors/compressibility.ts
@@ -592,21 +634,6 @@ var OPEN_FENCE_TO_END = /```[\s\S]*$/;
 var INLINE_CODE = /`[^`\n]*`/g;
 var URL = /\bhttps?:\/\/\S+/gi;
 var stripNonLinguistic = (text) => text.replace(FENCED_BLOCK, " ").replace(OPEN_FENCE_TO_END, " ").replace(INLINE_CODE, " ").replace(URL, " ");
-function scriptProfile(text, options = {}) {
-  const letters = judgeableLetters(text, options);
-  const out = {};
-  if (letters.length === 0) return out;
-  let classified = 0;
-  for (const name of supportedScripts) {
-    const re = SCRIPTS[name];
-    let hits = 0;
-    for (const ch of letters) if (re.test(ch)) hits++;
-    classified += hits;
-    out[name] = hits / letters.length;
-  }
-  out.other = (letters.length - classified) / letters.length;
-  return out;
-}
 function scriptMismatchScore(text, expected, options = {}) {
   const { minLetters = 12 } = options;
   const wanted = Array.isArray(expected) ? expected : [expected];
@@ -662,9 +689,6 @@ function promptEchoDetail(text, prompt, options = {}) {
     total++;
   }
   return { score: total === 0 ? 0 : clamp01(matched / total), mode };
-}
-function promptEchoScore(text, prompt, options = {}) {
-  return promptEchoDetail(text, prompt, options).score;
 }
 
 // src/internal/json-scope.ts
@@ -838,278 +862,6 @@ function checkOutput(text, options = {}) {
     json: parsedJson
   };
 }
-var DegenerateOutputError = class extends Error {
-  verdict;
-  /** Marks this as safe to retry against another provider. */
-  retryable = true;
-  constructor(verdict) {
-    super(`Degenerate LLM output: ${verdict.reasons.map((r) => r.code).join(", ")}`);
-    this.name = "DegenerateOutputError";
-    this.verdict = verdict;
-  }
-};
-function assertOutput(text, options = {}) {
-  const verdict = checkOutput(text, options);
-  if (!verdict.ok) throw new DegenerateOutputError(verdict);
-  return text;
-}
-
-// src/stream.ts
-var DEFERRED_TO_END = {
-  minLength: 0,
-  maxTruncation: null,
-  expectJson: false,
-  expectLang: null,
-  finishReason: void 0,
-  /*
-   * SCRIPT_MISMATCH is deferred for a reason none of the others share: it is
-   * the *window* that makes it unsafe, not the partial text.
-   *
-   * Which language a model answered in is a property of the whole response.
-   * Every mid-stream check reads the trailing `window` characters, so what it
-   * would actually measure is the language of the last few paragraphs -- and an
-   * English answer that ends by quoting a Chinese passage is a real thing that
-   * happens. Measured on exactly that shape: 0.114 across the document, 0.206
-   * over the last 1000 characters, and 0.500 over the last 400. The document is
-   * healthy and the window says it is half wrong, so a smaller `window` would
-   * buy earlier detection by manufacturing false positives out of quotations.
-   *
-   * The detector itself is decisive from about a dozen letters, so there is a
-   * real early-abort here for someone who wants it -- it just has to read the
-   * whole buffer rather than a window:
-   *
-   *   const v = checkOutput(guard.text, { expectScript: 'latin' });
-   *
-   * Deliberately left to the caller. The guard cannot run one detector over a
-   * different span than the rest without becoming a per-detector span router,
-   * and this is one line for the callers who need it.
-   */
-  expectScript: null,
-  /*
-   * PROMPT_ECHO is deferred for the same reason as SCRIPT_MISMATCH, and it
-   * bites harder. The score is the share of the *whole* output copied from the
-   * prompt, so a trailing window measures the share of that window -- and a
-   * response that opens by echoing the system prompt and then answers properly
-   * reads as 1.000 over its first window and 0.000 over its last. Neither
-   * number describes the response.
-   *
-   * Dilution is the point of the measure: an output that is 10% leaked prompt
-   * and 90% answer should score 0.1, and only the finished response knows what
-   * that ratio is.
-   */
-  prompt: null,
-  /*
-   * LOW_ENTROPY is deferred for a second reason: cost. The LZ77 pass is
-   * 0.4ms at 500 characters and 11ms at its 4000-character sample cap, which
-   * is 100x the other two detectors combined -- affordable once per response,
-   * ruinous every few hundred characters of every stream.
-   *
-   * DEFERRING IT IS CONDITIONAL, NOT FREE. The condition is that the redundancy
-   * detectors still running here reach a verdict *earlier* than LOW_ENTROPY
-   * would have, on every script. Two things make that true today:
-   *
-   *   - For spaced scripts, REPETITION catches what LOW_ENTROPY would, because
-   *     character-level collapse is also n-gram collapse.
-   *   - For Han, Kana and Thai, REPETITION is blind -- a loop with no
-   *     punctuation is a single word token -- and TAIL_LOOP's character mode is
-   *     what covers it. Measured at the 240-character warmup, that mode scores
-   *     0.854-1.000 on every degenerate CJK fixture and fires on the first
-   *     check. At that same moment LOW_ENTROPY reads 0.453-0.805, i.e. below
-   *     its own 0.75 threshold on most of them: running it here would detect
-   *     these *later*, at 100x the cost.
-   *
-   * SO THIS BREAKS IF: character dispatch is disabled (`maxCharTailLoop: null`,
-   * or `nonSpacedCutoff` raised out of reach), or `warmup` is raised past the
-   * point where a loop's periodicity has established itself in the window. A
-   * 15-character loop unit repeats 16 times in 240 characters against a
-   * `minRepeats` of 3, so there is room -- but it is room, not immunity. If you
-   * change either, re-measure before assuming this deferral is still safe;
-   * otherwise CJK streams silently lose mid-stream detection entirely and the
-   * only thing left is the end() check, which is after you have paid.
-   */
-  maxCompressibility: null
-};
-var EARLY_DOCUMENT_MIN = 600;
-var EARLY_DOCUMENT_CERTAINTY = 0.9;
-var EARLY_DOCUMENT_SAMPLE = 8e3;
-var DOCUMENT_ONLY = {
-  minLength: 0,
-  maxRepetition: null,
-  maxTailLoop: null,
-  maxCharTailLoop: null,
-  maxCompressibility: null,
-  maxTruncation: null,
-  expectJson: false,
-  expectLang: null,
-  finishReason: void 0,
-  maxScriptMismatch: EARLY_DOCUMENT_CERTAINTY,
-  maxPromptEcho: EARLY_DOCUMENT_CERTAINTY
-};
-function mergeEarly(windowVerdict, document) {
-  if (!document) return windowVerdict;
-  const reasons = [...windowVerdict.reasons, ...document.reasons];
-  return {
-    ...windowVerdict,
-    ok: reasons.length === 0,
-    reasons,
-    scores: { ...windowVerdict.scores, ...document.scores },
-    ...document.modes || windowVerdict.modes ? { modes: { ...windowVerdict.modes, ...document.modes } } : {}
-  };
-}
-function createStreamGuard(options = {}) {
-  const {
-    checkEvery = 400,
-    warmup = 240,
-    window = 2e3,
-    earlyDocumentChecks = false,
-    ...checkOptions
-  } = options;
-  const earlyDocument = earlyDocumentChecks && Boolean(checkOptions.expectScript || checkOptions.prompt);
-  let nextDocumentAt = EARLY_DOCUMENT_MIN;
-  let documentSettled = false;
-  let text = "";
-  let sinceCheck = 0;
-  let checks = 0;
-  const due = () => checks === 0 ? text.length >= warmup : sinceCheck >= checkEvery;
-  return {
-    get text() {
-      return text;
-    },
-    get checks() {
-      return checks;
-    },
-    push(chunk) {
-      if (typeof chunk !== "string" || chunk.length === 0) return null;
-      text += chunk;
-      sinceCheck += chunk.length;
-      if (!due()) return null;
-      sinceCheck = 0;
-      checks += 1;
-      const recent = text.length > window ? text.slice(-window) : text;
-      const verdict = checkOutput(recent, { ...checkOptions, ...DEFERRED_TO_END });
-      if (!earlyDocument || documentSettled || text.length < nextDocumentAt) return verdict;
-      nextDocumentAt = text.length * 2;
-      const head = text.length > EARLY_DOCUMENT_SAMPLE ? text.slice(0, EARLY_DOCUMENT_SAMPLE) : text;
-      if (head.length >= EARLY_DOCUMENT_SAMPLE) documentSettled = true;
-      return mergeEarly(verdict, checkOutput(head, { ...checkOptions, ...DOCUMENT_ONLY }));
-    },
-    end(finishReason) {
-      return checkOutput(text, {
-        ...checkOptions,
-        finishReason: finishReason ?? checkOptions.finishReason
-      });
-    }
-  };
-}
-async function* guardStream(source, options = {}) {
-  const { onDegenerate, onEnd, stopOnDegenerate = true, ...guardOptions } = options;
-  const guard = createStreamGuard(guardOptions);
-  let degenerate = false;
-  for await (const chunk of source) {
-    yield chunk;
-    const verdict = guard.push(chunk);
-    if (!verdict || verdict.ok || degenerate) continue;
-    degenerate = true;
-    onDegenerate?.(verdict);
-    if (stopOnDegenerate) return;
-  }
-  if (!degenerate) onEnd?.(guard.end());
-}
-
-// src/calibrate.ts
-function percentile(sorted, p) {
-  if (sorted.length === 0) return NaN;
-  if (sorted.length === 1) return sorted[0];
-  const rank = (sorted.length - 1) * p;
-  const low = Math.floor(rank);
-  const high = Math.ceil(rank);
-  if (low === high) return sorted[low];
-  return sorted[low] + (sorted[high] - sorted[low]) * (rank - low);
-}
-function findGap(sorted, minWidth = 0.15) {
-  if (sorted.length < 20) return null;
-  const start = Math.floor(sorted.length * 0.5);
-  let best = null;
-  for (let i = start; i < sorted.length - 1; i += 1) {
-    const width = sorted[i + 1] - sorted[i];
-    if (width < minWidth || best && width <= best.above - best.below) continue;
-    const count = sorted.length - (i + 1);
-    best = {
-      below: sorted[i],
-      above: sorted[i + 1],
-      count,
-      share: count / sorted.length
-    };
-  }
-  return best;
-}
-function summarise(code, scores, options = {}) {
-  const { falsePositiveRate = 1e-3, mode } = options;
-  const sorted = [...scores].sort((a, b) => a - b);
-  const n = sorted.length;
-  const distribution = {
-    n,
-    nonZero: sorted.filter((s) => s > 0).length,
-    min: sorted[0] ?? NaN,
-    max: sorted[n - 1] ?? NaN,
-    p50: percentile(sorted, 0.5),
-    p90: percentile(sorted, 0.9),
-    p99: percentile(sorted, 0.99),
-    p999: percentile(sorted, 0.999)
-  };
-  const caveats = [];
-  const gap = findGap(sorted);
-  const tailSamples = n * falsePositiveRate;
-  if (tailSamples < 10) {
-    caveats.push(
-      `sample is too small for a ${(falsePositiveRate * 100).toFixed(2)}% rate: it rests on the top ~${tailSamples.toFixed(0)} scores, and ~${Math.ceil(10 / falsePositiveRate).toLocaleString()} verdicts are needed before that tail means anything`
-    );
-  }
-  if (distribution.max === 0) {
-    caveats.push("every score is 0 -- this detector never moved on your traffic, so there is nothing to calibrate");
-  } else if (distribution.p50 === distribution.max) {
-    caveats.push("the distribution is a single value; a threshold from it describes nothing");
-  }
-  let suggested;
-  if (gap) {
-    suggested = (gap.below + gap.above) / 2;
-    if (gap.count < 5) {
-      caveats.push(
-        `the separation rests on ${gap.count} sample${gap.count === 1 ? "" : "s"}; treat it as a lead to confirm, not a calibrated threshold`
-      );
-    }
-  } else {
-    suggested = percentile(sorted, 1 - falsePositiveRate);
-    caveats.push(
-      "no clean separation in the tail, so this is a false-positive budget rather than a detection threshold"
-    );
-  }
-  return {
-    code,
-    ...mode && { mode },
-    distribution,
-    suggested: Number(suggested.toFixed(3)),
-    gap,
-    caveats
-  };
-}
-function calibrate(samples, options = {}) {
-  const groups = /* @__PURE__ */ new Map();
-  for (const sample of samples) {
-    const modes = sample.modes;
-    for (const [key, score] of Object.entries(sample)) {
-      if (typeof score !== "number" || !Number.isFinite(score)) continue;
-      const code = key;
-      const mode = modes?.[code];
-      const groupKey = mode ? `${code}:${mode}` : code;
-      const group = groups.get(groupKey);
-      if (group) group.scores.push(score);
-      else groups.set(groupKey, { code, ...mode && { mode }, scores: [score] });
-    }
-  }
-  const summaries = [...groups.values()].map(({ code, mode, scores }) => summarise(code, scores, { ...options, ...mode && { mode } })).sort((a, b) => b.distribution.n - a.distribution.n);
-  return { n: samples.length, summaries };
-}
 
 // src/presets.ts
 var presets = {
@@ -1159,7 +911,114 @@ var presets = {
   }
 };
 
+// src/internal/turn-fingerprint.ts
+var NAME_SEP = "\0";
+var CALL_SEP = "";
+function canonicalArguments(args) {
+  if (args === null || args === void 0) return "";
+  if (typeof args === "string") {
+    const trimmed = args.trim();
+    if (trimmed === "") return "";
+    try {
+      return canonicalArguments(JSON.parse(trimmed));
+    } catch {
+      return trimmed;
+    }
+  }
+  try {
+    return stringifySorted(args, /* @__PURE__ */ new WeakSet());
+  } catch {
+    return "";
+  }
+}
+function stringifySorted(value, seen) {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (seen.has(value)) return '"[circular]"';
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return `[${value.map((item) => stringifySorted(item, seen)).join(",")}]`;
+    }
+    const entries = Object.entries(value).filter(([, v]) => v !== void 0).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([k, v]) => `${JSON.stringify(k)}:${stringifySorted(v, seen)}`);
+    return `{${entries.join(",")}}`;
+  } finally {
+    seen.delete(value);
+  }
+}
+function normaliseText(text) {
+  return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+var callFingerprint = (call) => `${call.name ?? ""}${NAME_SEP}${canonicalArguments(call.arguments)}`;
+function fingerprintTurn(turn, ignoreTools) {
+  const issued = turn.toolCalls ?? [];
+  if (issued.length > 0) {
+    const kept = issued.filter((call) => !(call.name != null && ignoreTools.has(call.name)));
+    if (kept.length === 0) return null;
+    return kept.map(callFingerprint).sort().join(CALL_SEP);
+  }
+  const text = normaliseText(turn.text ?? "");
+  return text === "" ? null : `text${NAME_SEP}${text}`;
+}
+
+// src/detectors/agent-loop.ts
+var AGENT_LOOP_DEFAULTS = {
+  window: 12,
+  minTurns: 4,
+  minRepeats: 3,
+  maxPeriod: 4
+};
+function agentLoopDetail(turns, options = {}) {
+  const { window, minTurns, minRepeats, maxPeriod } = { ...AGENT_LOOP_DEFAULTS, ...options };
+  const ignore = new Set(options.ignoreTools ?? []);
+  const none = { score: 0, period: 0, repeats: 0, measured: 0, cycle: [] };
+  if (!Array.isArray(turns)) return none;
+  const fingerprints = [];
+  const labels = [];
+  for (const turn of turns) {
+    if (turn == null || typeof turn !== "object") continue;
+    const fp = fingerprintTurn(turn, ignore);
+    if (fp === null) continue;
+    fingerprints.push(fp);
+    labels.push(labelTurn(turn, ignore));
+  }
+  const size = Math.max(1, window);
+  const tail = fingerprints.slice(-size);
+  if (tail.length < minTurns) return { ...none, measured: tail.length };
+  const detail = periodicDetail(tail, { maxPeriod, minRepeats, minSample: minTurns });
+  const cycle = detail.period > 0 ? labels.slice(-detail.period) : [];
+  return { ...detail, measured: tail.length, cycle };
+}
+function labelTurn(turn, ignore) {
+  const kept = (turn.toolCalls ?? []).filter(
+    (call) => !(call.name != null && ignore.has(call.name))
+  );
+  if (kept.length === 0) return "prose";
+  return kept.map((call) => call.name ?? "(unnamed)").join("+");
+}
+
+// src/agent.ts
+var MAX_AGENT_LOOP = 0.4;
+function checkTrace(turns, options = {}) {
+  const threshold = options.maxAgentLoop === void 0 ? MAX_AGENT_LOOP : options.maxAgentLoop;
+  const reasons = [];
+  const scores = {};
+  if (threshold == null) return { ok: true, reasons, scores };
+  const detail = agentLoopDetail(turns, options);
+  scores.AGENT_LOOP = detail.score;
+  if (detail.score > threshold) {
+    const block = detail.cycle.join(" -> ");
+    reasons.push({
+      code: "AGENT_LOOP",
+      score: detail.score,
+      threshold,
+      message: `Agent repeated the same ${detail.period}-turn cycle ${detail.repeats} times (${Math.round(detail.score * 100)}% of the last ${detail.measured} turns): ${block}.`
+    });
+  }
+  return { ok: reasons.length === 0, reasons, scores };
+}
+
 const FIXTURES = {"degenerate":[{"id":"repetition-word-stutter","note":"Single-token stutter, no sentence structure at all.","text":"interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview interview","preset":"chat"},{"id":"repetition-clause-loop","note":"Classic degenerate loop. This is the shape the gemma retry storm produced.","text":"The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React. The candidate has experience with React.","preset":"chat"},{"id":"tail-loop-after-good-start","note":"First half is fine, then it falls into a loop. Whole-output repetition scores low here.","text":"Based on the repositories, this candidate works primarily in TypeScript with a focus on frontend architecture. They have shipped several production applications and show comfort with server-side rendering, state management, and API design across a range of project sizes and problem domains they encountered.\n\nPlease describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing. Please describe your approach to testing.","preset":"chat"},{"id":"cjk-tail-loop-zh-nopunct","note":"Chinese loop with no punctuation inside it. The whole 640 characters are a single word() token, so REPETITION and word-mode TAIL_LOOP both score 0.000. Char-mode TAIL_LOOP scores 1.000. This is the fixture the character dispatch exists for.","text":"我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题我需要更多的信息才能回答这个问题","preset":"chat"},{"id":"low-entropy-charspam","note":"Character-level collapse with no word boundaries for n-grams to catch.","text":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","preset":"chat"},{"id":"truncated-mid-sentence","note":"Hit the token ceiling mid-clause.","text":"The candidate demonstrates solid familiarity with distributed caching, and in particular their use of Redis for session state suggests they have thought carefully about the tradeoffs between","preset":"strictJson"},{"id":"empty-json-braces","note":"Empty JSON envelope where content was expected.","text":"{}","preset":"strictJson"},{"id":"invalid-json-prose-wrapper","note":"Model chatted around the payload instead of emitting bare JSON.","text":"Sure! Here is the JSON you requested:\n\n{ \"score\": 8, \"notes\": \"solid\" }\n\nLet me know if you need anything else.","preset":"strictJson"}],"healthy":[{"id":"markdown-table","note":"TRAP: pipes and dashes look like low-entropy noise.","text":"| Provider | Median latency | Failure rate |\n| --- | --- | --- |\n| Gemini | 820ms | 0.4% |\n| Groq | 310ms | 1.2% |\n| Local | 2100ms | 0.0% |\n\nGroq is fastest but least reliable, which is exactly why it belongs second in the chain rather than first.","preset":"chat"},{"id":"list-repeated-prefix","note":"TRAP: every line starts identically. A naive n-gram check flags this.","text":"Pertanyaan yang bisa diajukan:\n\n1. Bagaimana kamu menentukan kapan sebuah komponen perlu dipecah?\n2. Bagaimana kamu menangani race condition di sisi klien?\n3. Bagaimana kamu memutuskan antara server component dan client component?\n4. Bagaimana kamu mengukur dampak perubahan terhadap performa?\n5. Bagaimana kamu menangani error dari pihak ketiga yang tidak stabil?","preset":"chat"},{"id":"prose-en-with-refrain","note":"TRAP: deliberate rhetorical repetition, which is legitimate writing.","text":"It is not a framework problem. It is not a language problem. It is not even a scaling problem. What you are looking at is a design problem, and no amount of infrastructure will paper over it. The queue you added last quarter moved the symptom rather than removing it, and the retry logic you added on top moved it again.","preset":"chat"},{"id":"code-block-typescript","note":"TRAP: code repeats syntax heavily and ends on a brace.","text":"Here is the wrapper:\n\n```ts\nexport async function withFallback<T>(fns: Array<() => Promise<T>>): Promise<T> {\n  let last: unknown;\n  for (const fn of fns) {\n    try {\n      return await fn();\n    } catch (err) {\n      last = err;\n    }\n  }\n  throw last;\n}\n```\n\nIt tries each function in order and rethrows the final error if all of them fail.","preset":"chat"},{"id":"prose-zh-poem-refrain","note":"Trap. A six-times refrain closing a Chinese poem -- legitimate, and the healthy end of the same curve cjk-refrain-x20 sits at the degenerate end of. Char TAIL_LOOP scores 0.291 here against a 0.7 threshold. The curve crosses at roughly ten consecutive repeats.","text":"用户要求写一段关于离别的短诗，下面是我的尝试。整体的节奏偏慢，重复的句子用来收束情绪，这是这一类作品里常见的处理方式。如果你希望更克制一些，可以把最后的重复减少到两次。\n\n站台的灯一盏一盏亮起来\n行李比来时更重\n你说的那句再见\n被风吹散在铁轨上\n\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n我在这里等你回来\n","preset":"chat"},{"id":"prose-zh-repeated-prefix-steps","note":"Trap, and the CJK analogue of list-repeated-prefix. Every step opens with the identical verb phrase.","text":"发布流程如下，请按顺序执行，任何一步没有通过都不要继续往下走。\n\n请先确认配置文件中的数据库地址已经指向生产实例，而不是预发环境。\n请先确认镜像标签与发布单上记录的版本号完全一致，包括构建号后缀。\n请先确认灰度比例已经设置为百分之五，并且监控面板处于打开状态。\n请先确认回滚脚本可以在两分钟之内执行完毕，必要时提前演练一次。\n请先确认值班同事已经收到本次发布的通知，并且确认过时间窗口。\n请先确认变更记录已经写入内部文档，包含影响范围和回滚方式。","preset":"chat"},{"id":"prose-en-technical-explanation","note":"Normal English answer.","text":"Circuit breakers work by tracking consecutive failures against a threshold. Once that threshold is crossed the breaker opens and subsequent calls fail immediately, without touching the downstream service. After a cooldown window the breaker moves to a half-open state and allows a single trial request through. If that request succeeds the breaker closes again; if it fails, the cooldown restarts.","preset":"chat"},{"id":"json-fenced-valid","note":"Valid JSON inside a fence -- common and acceptable.","text":"```json\n{\n  \"score\": 6,\n  \"notes\": \"Mixed signal.\",\n  \"followUp\": []\n}\n```","preset":"strictJson"}]};
+const AGENT_FIXTURES = {"degenerate":[{"id":"tool-same-args-x6","note":"The plainest shape: identical call, six times, no progress. Every individual turn is a healthy response.","turns":[{"text":"Let me read the config file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/config.ts"}}]},{"text":"Let me read the config file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/config.ts"}}]},{"text":"Let me read the config file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/config.ts"}}]},{"text":"Let me read the config file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/config.ts"}}]},{"text":"Let me read the config file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/config.ts"}}]},{"text":"Let me read the config file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/config.ts"}}]}]},{"id":"tool-cycle-ab-x4","note":"Period-2 cycle. Edit the same file with the same content, run the same tests, repeat. Neither call alone repeats consecutively.","turns":[{"text":"Fixing the import.","toolCalls":[{"name":"edit_file","arguments":{"path":"src/app.ts","content":"import { z } from 'zod';"}}]},{"text":"Now running the tests.","toolCalls":[{"name":"run_tests","arguments":{}}]},{"text":"Fixing the import.","toolCalls":[{"name":"edit_file","arguments":{"path":"src/app.ts","content":"import { z } from 'zod';"}}]},{"text":"Now running the tests.","toolCalls":[{"name":"run_tests","arguments":{}}]},{"text":"Fixing the import.","toolCalls":[{"name":"edit_file","arguments":{"path":"src/app.ts","content":"import { z } from 'zod';"}}]},{"text":"Now running the tests.","toolCalls":[{"name":"run_tests","arguments":{}}]},{"text":"Fixing the import.","toolCalls":[{"name":"edit_file","arguments":{"path":"src/app.ts","content":"import { z } from 'zod';"}}]},{"text":"Now running the tests.","toolCalls":[{"name":"run_tests","arguments":{}}]}]},{"id":"tool-loop-after-progress","note":"Six turns of real progress, then stuck. Whole-trace redundancy dilutes this to half; the trailing window is where it reads.","turns":[{"text":"Listing the source directory.","toolCalls":[{"name":"list_dir","arguments":{"path":"src"}}]},{"text":"Reading the entry point.","toolCalls":[{"name":"read_file","arguments":{"path":"src/index.ts"}}]},{"text":"Reading the router.","toolCalls":[{"name":"read_file","arguments":{"path":"src/router.ts"}}]},{"text":"Searching for the handler.","toolCalls":[{"name":"grep","arguments":{"pattern":"handleRequest"}}]},{"text":"Reading the handler.","toolCalls":[{"name":"read_file","arguments":{"path":"src/handler.ts"}}]},{"text":"Applying the fix.","toolCalls":[{"name":"edit_file","arguments":{"path":"src/handler.ts","content":"return res.status(200).json(body);"}}]},{"text":"Running the tests.","toolCalls":[{"name":"run_tests","arguments":{"filter":"handler"}}]},{"text":"Running the tests.","toolCalls":[{"name":"run_tests","arguments":{"filter":"handler"}}]},{"text":"Running the tests.","toolCalls":[{"name":"run_tests","arguments":{"filter":"handler"}}]},{"text":"Running the tests.","toolCalls":[{"name":"run_tests","arguments":{"filter":"handler"}}]},{"text":"Running the tests.","toolCalls":[{"name":"run_tests","arguments":{"filter":"handler"}}]}]},{"id":"text-restate-x5","note":"No tool calls at all. The model restates the same sentence every turn, whitespace and capitalisation drifting.","turns":[{"text":"Let me check the configuration file for the database settings."},{"text":"Let me check the configuration file for the database settings."},{"text":"Let me check the configuration  file for the database settings."},{"text":"let me check the configuration file for the database settings."},{"text":"Let me check the configuration file for the database settings.\n"}]}],"healthy":[{"id":"batch-read-distinct-files","note":"TRAP: twenty consecutive calls to one tool. Reading twenty files is what the tool is for -- the arguments are what carry the progress.","turns":[{"text":"Reading the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/index.ts"}}]},{"text":"Reading the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/router.ts"}}]},{"text":"Reading the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/handler.ts"}}]},{"text":"Reading the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/db.ts"}}]},{"text":"Reading the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/auth.ts"}}]},{"text":"Reading the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/cache.ts"}}]},{"text":"Reading the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/queue.ts"}}]},{"text":"Reading the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/mailer.ts"}}]},{"text":"Reading the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/config.ts"}}]},{"text":"Reading the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/logger.ts"}}]},{"text":"Reading the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/metrics.ts"}}]},{"text":"Reading the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/tracing.ts"}}]},{"text":"Reading the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/schema.ts"}}]},{"text":"Reading the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/types.ts"}}]},{"text":"Reading the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/utils.ts"}}]},{"text":"Reading the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/errors.ts"}}]},{"text":"Reading the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/middleware.ts"}}]},{"text":"Reading the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/session.ts"}}]},{"text":"Reading the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/upload.ts"}}]},{"text":"Reading the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/search.ts"}}]}]},{"id":"identical-preamble-distinct-args","note":"TRAP: the prose is word-for-word identical on every turn and the work is not. This is why a turn carrying tool calls is fingerprinted by the calls and never by its preamble.","turns":[{"text":"Let me check the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/a.ts"}}]},{"text":"Let me check the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/b.ts"}}]},{"text":"Let me check the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/c.ts"}}]},{"text":"Let me check the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/d.ts"}}]},{"text":"Let me check the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/e.ts"}}]},{"text":"Let me check the next file.","toolCalls":[{"name":"read_file","arguments":{"path":"src/f.ts"}}]}]},{"id":"alternating-with-progress","note":"TRAP: edit/test/edit/test looks exactly like a period-2 cycle, and every run_tests call is byte-identical. The edits are not, so the pair never repeats.","turns":[{"text":"Fixing the first import.","toolCalls":[{"name":"edit_file","arguments":{"path":"src/a.ts","content":"import { z } from 'zod';"}}]},{"text":"Running the tests.","toolCalls":[{"name":"run_tests","arguments":{}}]},{"text":"Fixing the second import.","toolCalls":[{"name":"edit_file","arguments":{"path":"src/b.ts","content":"import { readFile } from 'node:fs/promises';"}}]},{"text":"Running the tests.","toolCalls":[{"name":"run_tests","arguments":{}}]},{"text":"Fixing the third import.","toolCalls":[{"name":"edit_file","arguments":{"path":"src/c.ts","content":"import { createHash } from 'node:crypto';"}}]},{"text":"Running the tests.","toolCalls":[{"name":"run_tests","arguments":{}}]},{"text":"Fixing the last import.","toolCalls":[{"name":"edit_file","arguments":{"path":"src/d.ts","content":"import { setTimeout } from 'node:timers/promises';"}}]},{"text":"Running the tests.","toolCalls":[{"name":"run_tests","arguments":{}}]}]},{"id":"poll-status-three-times","note":"TRAP, and the boundary case: polling a job is identical by shape to a loop. Three identical calls sit under the floor. Longer polling does not, which is a documented limitation with an escape hatch, not a bug.","turns":[{"text":"Starting the export.","toolCalls":[{"name":"start_export","arguments":{"table":"orders"}}]},{"text":"Checking whether it finished.","toolCalls":[{"name":"get_job_status","arguments":{"id":"job_8812"}}]},{"text":"Still running. Checking again.","toolCalls":[{"name":"get_job_status","arguments":{"id":"job_8812"}}]},{"text":"Checking once more.","toolCalls":[{"name":"get_job_status","arguments":{"id":"job_8812"}}]},{"text":"Done. Downloading the file.","toolCalls":[{"name":"download","arguments":{"id":"job_8812"}}]}]},{"id":"same-tool-drifting-args","note":"TRAP: pagination. One tool, one query, only the offset moving. Near-identical by any similarity measure and correct.","turns":[{"text":"Fetching the first page.","toolCalls":[{"name":"search","arguments":{"query":"incident report","limit":50,"offset":0}}]},{"text":"Fetching the next page.","toolCalls":[{"name":"search","arguments":{"query":"incident report","limit":50,"offset":50}}]},{"text":"Fetching the next page.","toolCalls":[{"name":"search","arguments":{"query":"incident report","limit":50,"offset":100}}]},{"text":"Fetching the next page.","toolCalls":[{"name":"search","arguments":{"query":"incident report","limit":50,"offset":150}}]},{"text":"Fetching the last page.","toolCalls":[{"name":"search","arguments":{"query":"incident report","limit":50,"offset":200}}]},{"text":"Two hundred and thirteen incidents, of which nine are unresolved."}]}]};
 
 /* Thresholds per code. A verdict carries one only for detectors that failed, so
    the passing ones are derived from the same options checkOutput was given --
@@ -1239,7 +1098,7 @@ function buildPresets() {
   });
 }
 
-function run() {
+function runResponse() {
   const text = $('input').value;
   const opts = presets[activePreset];
   const verdict = checkOutput(text, opts);
@@ -1326,6 +1185,180 @@ function run() {
       ? '<span class="c">// verdict.ok === true — use the response</span>'
       : '<span class="c">// verdict.ok === false — ' + verdict.reasons.map((r) => r.code).join(', ') + '</span>');
 }
+
+/* ---------------------------------------------------------------- agent mode */
+
+let mode = 'response';
+let activeTrace = null;
+
+/** What a turn did, for the strip. Never used for comparison -- see the docs. */
+function labelOf(turn) {
+  const calls = (turn && turn.toolCalls) || [];
+  const text = (turn && turn.text) || '';
+  if (calls.length === 0) return { what: 'prose', args: text, said: '' };
+  return {
+    what: calls.map((c) => c.name || '(unnamed)').join(' + '),
+    args: calls.map((c) => {
+      const a = c.arguments;
+      const serialised = typeof a === 'string' ? a : JSON.stringify(a);
+      return serialised === undefined ? '' : serialised;
+    }).join(' '),
+    /* Quoted so it reads as something the model said rather than as data. */
+    said: text ? '\u201c' + text + '\u201d' : '',
+  };
+}
+
+function parseTrace(text) {
+  try {
+    const value = JSON.parse(text);
+    if (Array.isArray(value)) return value;
+    if (value && Array.isArray(value.turns)) return value.turns;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function buildAgentChips(containerId, list, kind) {
+  const box = $(containerId);
+  list.forEach((f) => {
+    const b = el('button', 'chip', f.id);
+    b.type = 'button';
+    b.setAttribute('aria-pressed', 'false');
+    b.addEventListener('click', () => {
+      $('input').value = JSON.stringify(f.turns, null, 2);
+      activeTrace = { ...f, kind };
+      document.querySelectorAll('.chip').forEach((c) => c.setAttribute('aria-pressed', 'false'));
+      b.setAttribute('aria-pressed', 'true');
+      run();
+    });
+    box.appendChild(b);
+  });
+}
+
+function runAgent() {
+  const raw = $('input').value;
+  const turns = parseTrace(raw);
+
+  $('charcount').textContent = turns ? turns.length + ' turns' : 'not a trace';
+
+  const verdict = turns ? checkTrace(turns) : { ok: true, reasons: [], scores: {} };
+  const detail = turns ? agentLoopDetail(turns) : { score: 0, period: 0, repeats: 0, measured: 0, cycle: [] };
+
+  const v = $('verdict');
+  v.className = 'verdict ' + (verdict.ok ? 'ok' : 'bad');
+  $('verdict-text').textContent = !turns
+    ? 'paste a JSON array of turns'
+    : verdict.ok ? 'ok — the run is advancing' : 'circling';
+  $('verdict-codes').textContent = verdict.ok
+    ? (turns ? detail.measured + ' turns judged' : '')
+    : 'AGENT_LOOP  ' + detail.period + '-turn cycle x' + detail.repeats;
+
+  /* ---- the turn strip: where the cycle actually is ---- */
+  const strip = $('turns');
+  strip.hidden = false;
+  strip.textContent = '';
+  const list = turns || [];
+  /* The cycle sits at the end of what was measured, so the highlighted span is
+     the last period x repeats turns -- exact, not an approximation. */
+  const inCycle = detail.period > 0 ? detail.period * detail.repeats : 0;
+  list.forEach((turn, i) => {
+    const { what, args, said } = labelOf(turn);
+    const row = el('div', 'turn' + (i >= list.length - inCycle ? ' in-cycle' : ''));
+    row.append(
+      el('span', 'n', String(i + 1)),
+      el('span', 'what', what),
+      el('span', 'args', args),
+      el('span', 'said', said),
+    );
+    strip.appendChild(row);
+  });
+
+  /* ---- one meter, because there is one detector on this axis ---- */
+  const box = $('meters');
+  box.textContent = '';
+  const over = !verdict.ok;
+  const row = el('div', 'meter');
+  row.append(el('div', 'code', 'AGENT_LOOP'));
+  const track = el('div', 'track');
+  const fill = el('div', 'fill' + (over ? ' over' : ''));
+  fill.style.width = Math.max(0, Math.min(1, detail.score)) * 100 + '%';
+  track.appendChild(fill);
+  const tick = el('div', 'tick');
+  tick.style.left = '40%';
+  tick.title = 'threshold 0.4';
+  track.appendChild(tick);
+  const val = el('div', 'val' + (over ? ' over' : ''));
+  val.textContent = detail.score.toFixed(3);
+  row.append(track, val);
+  box.appendChild(row);
+
+  /* ---- note ---- */
+  const note = $('note');
+  note.textContent = '';
+  if (activeTrace && activeTrace.note) {
+    const wantFail = activeTrace.kind === 'bad';
+    const strong = el('b', null, wantFail ? 'Circling. ' : 'Healthy. ');
+    note.append(strong, document.createTextNode(activeTrace.note.replace(/^TRAP:\s*/i, '')));
+  } else {
+    note.textContent = 'Pick a run above, or paste a JSON array of turns.';
+  }
+
+  $('snippet').innerHTML =
+    '<span class="k">import</span> { createAgentGuard } <span class="k">from</span> <span class="s">&#39;llm-output-guard/agent&#39;</span>;\n' +
+    '<span class="k">import</span> { toTurn } <span class="k">from</span> <span class="s">&#39;llm-output-guard/openai&#39;</span>;\n' +
+    '\n' +
+    '<span class="k">const</span> verdict = guard.observe(toTurn(completion));\n' +
+    (verdict.ok
+      ? '<span class="c">// verdict.ok === true — keep going</span>'
+      : '<span class="c">// verdict.ok === false — AGENT_LOOP, stop paying for it</span>');
+}
+
+/** The one entry point, so a mode switch cannot leave half the page stale. */
+function run() {
+  return mode === 'agent' ? runAgent() : runResponse();
+}
+
+function setMode(next) {
+  mode = next;
+  const agent = next === 'agent';
+  $('mode-response').setAttribute('aria-pressed', String(!agent));
+  $('mode-agent').setAttribute('aria-pressed', String(agent));
+
+  $('chips-bad').hidden = agent;
+  $('chips-good').hidden = agent;
+  $('chips-agent-bad').hidden = !agent;
+  $('chips-agent-good').hidden = !agent;
+  /* Presets are a per-response contract; AGENT_LOOP has one threshold and reads
+     one axis, so the control is hidden rather than left there doing nothing. */
+  $('presets').hidden = agent;
+  $('turns').hidden = !agent;
+  $('card-agent').hidden = !agent;
+  $('card-modes').hidden = agent;
+
+  document.querySelectorAll('.chip').forEach((c) => c.setAttribute('aria-pressed', 'false'));
+  activeChip = null;
+  activeTrace = null;
+
+  if (agent) {
+    const first = AGENT_FIXTURES.degenerate[0];
+    $('input').value = JSON.stringify(first.turns, null, 2);
+    activeTrace = { ...first, kind: 'bad' };
+    document.querySelector('#chips-agent-bad .chip').setAttribute('aria-pressed', 'true');
+  } else {
+    const first = FIXTURES.degenerate[0];
+    $('input').value = first.text;
+    activeChip = { ...first, kind: 'bad' };
+    document.querySelector('#chips-bad .chip').setAttribute('aria-pressed', 'true');
+    setPreset(first.preset || 'chat');
+  }
+  run();
+}
+
+buildAgentChips('chips-agent-bad', AGENT_FIXTURES.degenerate, 'bad');
+buildAgentChips('chips-agent-good', AGENT_FIXTURES.healthy, 'good');
+$('mode-response').addEventListener('click', () => setMode('response'));
+$('mode-agent').addEventListener('click', () => setMode('agent'));
 
 buildChips('chips-bad', FIXTURES.degenerate, 'bad');
 buildChips('chips-good', FIXTURES.healthy, 'good');

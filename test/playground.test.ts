@@ -33,6 +33,7 @@ interface El {
   textContent: string | null;
   className: string;
   value: string;
+  hidden: boolean;
   style: { width: string; left: string };
   click(): void;
 }
@@ -173,5 +174,114 @@ describe('the controls change the readout', () => {
   it('reports the preset in the generated snippet', () => {
     expect(doc.querySelector('#snippet')?.textContent).toContain('presets.');
     expect(doc.querySelector('#snippet')?.textContent).toContain('checkOutput');
+  });
+});
+
+/**
+ * The agent mode, executed for the same reason everything else here is.
+ *
+ * `AGENT_LOOP` shipped in 1.9.0 and the page could not show it, which mattered
+ * more than usual: the persuasive half of this detector is not that it catches
+ * loops, it is that the traps -- twenty reads of twenty files, one preamble
+ * reused across a whole run, edit/test/edit/test -- all score 0.000. That is
+ * the claim a reader arrives sceptical about, and a page is the only place it
+ * can be answered in one glance.
+ */
+describe('the playground runs the agent detector too', () => {
+  /** A fresh document, switched into agent mode. */
+  const inAgentMode = (): Doc => {
+    const d = render();
+    d.querySelector('#mode-agent')!.click();
+    return d;
+  };
+
+  /** Types into the textarea the way a person does, via the page's listener. */
+  const type = (d: Doc, value: string): void => {
+    const input = d.querySelector('#input')!;
+    input.value = value;
+    const view = (d as unknown as { defaultView: { Event: new (t: string) => object } }).defaultView;
+    (input as unknown as { dispatchEvent(e: object): void }).dispatchEvent(new view.Event('input'));
+  };
+
+  it('offers both groups of runs', () => {
+    const d = inAgentMode();
+    expect(d.querySelectorAll('#chips-agent-bad .chip').length).toBeGreaterThan(0);
+    expect(d.querySelectorAll('#chips-agent-good .chip').length).toBeGreaterThan(0);
+  });
+
+  it('opens on a circling run, already judged', () => {
+    const d = inAgentMode();
+    expect(d.querySelector('#verdict')?.className).toContain('bad');
+    expect(d.querySelector('#verdict-text')?.textContent).toBe('circling');
+    expect(d.querySelector('#verdict-codes')?.textContent).toContain('AGENT_LOOP');
+  });
+
+  it('shows one meter, scored over the threshold', () => {
+    const d = inAgentMode();
+    const codes = [...d.querySelectorAll('.meter .code')].map((n) => n.textContent);
+    expect(codes).toEqual(['AGENT_LOOP']);
+
+    const value = Number(d.querySelector('.meter .val')?.textContent);
+    expect(value).toBeGreaterThan(0.4);
+  });
+
+  /* The strip is the explanation: a score says how much, it says where. */
+  it('renders one row per turn and highlights the cycle', () => {
+    const d = inAgentMode();
+    const rows = [...d.querySelectorAll('#turns .turn')];
+    expect(rows.length).toBeGreaterThan(3);
+
+    const highlighted = rows.filter((r) => r.className.includes('in-cycle'));
+    expect(highlighted.length).toBeGreaterThan(0);
+    // The cycle runs to the end of the trace, so the final turn is always in it.
+    expect(rows[rows.length - 1]!.className).toContain('in-cycle');
+  });
+
+  /**
+   * The half worth shipping. Each healthy trap is a shape a reader expects a
+   * loop detector to get wrong.
+   */
+  it('passes every healthy trap, with nothing highlighted', () => {
+    const d = inAgentMode();
+    const traps = [...d.querySelectorAll('#chips-agent-good .chip')];
+    expect(traps.length).toBeGreaterThan(2);
+
+    for (const trap of traps) {
+      trap.click();
+      const label = trap.textContent;
+      expect(d.querySelector('#verdict')?.className, `false positive on ${label}`).toContain('ok');
+      expect(Number(d.querySelector('.meter .val')?.textContent), label ?? '').toBe(0);
+      expect(
+        [...d.querySelectorAll('#turns .turn')].filter((r) => r.className.includes('in-cycle')),
+        `${label} should have no cycle to highlight`,
+      ).toEqual([]);
+    }
+  });
+
+  /* A preset is a per-response contract; this axis has one threshold. */
+  it('hides the preset control in agent mode and restores it on the way back', () => {
+    const d = inAgentMode();
+    expect(d.querySelector('#presets')?.hidden).toBe(true);
+
+    d.querySelector('#mode-response')!.click();
+    expect(d.querySelector('#presets')?.hidden).toBe(false);
+    expect(d.querySelector('#turns')?.hidden).toBe(true);
+  });
+
+  /*
+   * Typed input, through the page's own listener rather than a direct call --
+   * that listener is the path every real keystroke takes, and it is what would
+   * throw on a half-typed trace.
+   */
+  it('says so rather than throwing while a trace is being typed', () => {
+    const d = inAgentMode();
+    const input = d.querySelector('#input')!;
+
+    for (const partial of ['', 'n', '[', '[{', '[{"text":', 'not a trace at all']) {
+      input.value = partial;
+      expect(() => type(d, partial), `threw on ${JSON.stringify(partial)}`).not.toThrow();
+      expect(d.querySelector('#charcount')?.textContent).toBe('not a trace');
+      expect(d.querySelector('#verdict')?.className).toContain('ok');
+    }
   });
 });
