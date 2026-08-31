@@ -1,5 +1,88 @@
 # llm-output-guard
 
+## 1.11.0
+
+### Minor Changes
+
+- 941f895: `check --trace` takes the run-scoring options: `--ignore-tools`,
+  `--max-agent-loop`, `--window`, `--min-turns`.
+
+  `--ignore-tools` is the one that had to exist. `AGENT_LOOP` cannot tell a job
+  poller from a loop — the docs say so and offer `ignoreTools` as the answer — and
+  the CLI had no way to express it, because `checkTrace` was called with no
+  options at all.
+
+  That was worse on this path than it would have been in the library. `--trace` is
+  the **calibration** path: every polling run flagged, so the sample you derived a
+  threshold from carried exactly the false positives the option exists to remove,
+  and the number it suggested was shaped by them.
+
+  ```bash
+  npx llm-output-guard check runs.jsonl --trace \
+    --ignore-tools get_job_status,sleep --json \
+    | npx llm-output-guard calibrate
+  ```
+
+  Two things are now refused rather than ignored. `--preset` with `--trace` exits
+  2 and names `--max-agent-loop`: a preset is a per-response contract, runs are
+  scored on one axis with one threshold, and silently accepting it would leave a
+  caller believing they had tuned something. A run-scoring flag without `--trace`
+  exits 2 for the same reason. A non-numeric knob is refused rather than
+  defaulting quietly.
+
+### Patch Changes
+
+- f5d6ac2: The playground can show `AGENT_LOOP`.
+
+  `AGENT_LOOP` shipped in 1.9.0 and the page could not demonstrate it, which
+  mattered more than a missing feature usually would. The playground is the first
+  link in the README — _try it in your browser, no API key, no request_ — and it
+  is regenerated on every release precisely so the demo cannot fall behind the
+  code. For two releases it had.
+
+  A new **agent run** mode: pick a trace, or paste a JSON array of turns, and see
+  the verdict with a turn-by-turn strip showing exactly which turns form the
+  cycle. `tool-loop-after-progress` is the one to look at — six turns of real work
+  left plain, then five identical `run_tests` calls highlighted, scoring 0.455.
+
+  **The traps are the half worth shipping.** Catching a loop is the part a reader
+  already believes; that twenty reads of twenty files, one preamble reused across
+  a whole run, edit/test/edit/test and a short poll all score `0.000` is the part
+  they arrive sceptical about, and one glance answers it better than a paragraph
+  can. Each turn now shows its preamble beside its arguments, so the
+  identical-prose-different-arguments case is visible rather than described.
+
+  Specimens come from `test/fixtures/agent/` at build time, like the prose ones,
+  and the build refuses if any of them stops behaving as labelled — so the demo
+  and the thresholds cannot drift apart. The page bundles from a synthetic entry
+  now, since the cross-turn detector deliberately is not exported from the root.
+
+  `test/playground.test.ts` executes the new mode rather than inspecting it,
+  including typing a half-finished trace one character at a time, on the same
+  reasoning the file was written for: a playground that renders an empty shell
+  passes every check that does not run it.
+
+- 941f895: `npm run bench` covers the cross-turn path, and `docs/performance.md` reports it.
+
+  The README has claimed sub-millisecond since 1.0, and since 1.9.0 that claim had
+  an uncovered public hot path: `checkTrace` and `createAgentGuard` read a window
+  of turns rather than a span of text, so none of the existing numbers described
+  them. Their cost scales with the size of the **tool arguments** a model passes,
+  not with the length of any response — a different lever from the one the rest of
+  the document is about.
+
+  Over a 12-turn window carrying 9 KB of arguments per turn: `checkTrace` 0.069 ms
+  p50, `observe()` 0.075 ms, and the same twelve turns as prose 0.003 ms. That last
+  row is the shape of it — with no arguments to canonicalise the same trace is
+  twenty times cheaper.
+
+  Also written down: **`observe()` does redundant work and it is staying.** It
+  re-fingerprints every retained turn per call rather than caching, repeating the
+  window's work each time — about 14x one turn's fingerprint. Measured before it
+  was defended: 0.075 ms per turn is 15 ms across a 200-turn run, against 200 model
+  calls that take seconds each. A cache would buy nothing observable and would put
+  an invalidation question into a hot path.
+
 ## 1.10.0
 
 ### Minor Changes
