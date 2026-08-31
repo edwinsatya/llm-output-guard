@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { calibrate, type ScoreSample } from './calibrate.js';
 import { checkOutput } from './check.js';
 import { checkTrace } from './agent.js';
-import type { AgentTurn } from './agent-types.js';
+import type { AgentCheckOptions, AgentTurn } from './agent-types.js';
 import { toTurn as fromOpenAI } from './openai.js';
 import { toTurn as fromAnthropic } from './anthropic.js';
 import { toTurn as fromGemini } from './google.js';
@@ -334,6 +334,19 @@ function runCheck(args: string[]): Promise<number> | number {
   let presetName = 'chat';
   const presetAt = args.indexOf('--preset');
   if (presetAt !== -1) {
+    /*
+     * A preset is a per-response contract, and `--trace` scores runs on a
+     * single axis with a single threshold. Silently ignoring it would leave a
+     * caller believing they had tuned something -- so it is refused, and the
+     * message names the option they actually wanted.
+     */
+    if (asTrace) {
+      process.stderr.write(
+        '--preset applies to responses, not runs. --trace scores AGENT_LOOP, ' +
+          'which has one threshold: use --max-agent-loop.\n',
+      );
+      return 2;
+    }
     const name = args[presetAt + 1];
     if (!name || !Object.hasOwn(presets, name)) {
       process.stderr.write(
@@ -345,8 +358,56 @@ function runCheck(args: string[]): Promise<number> | number {
     presetName = name;
   }
 
+  /**
+   * The run-scoring knobs.
+   *
+   * `--ignore-tools` is the one that had to exist. `AGENT_LOOP` cannot tell a
+   * polling tool from a loop -- the docs say so and offer `ignoreTools` as the
+   * answer -- and until now the CLI could not express it. That is worse here
+   * than in the library: this is the *calibration* path, so every polling run
+   * flagged, and the sample you derived a threshold from was poisoned by
+   * exactly the false positives the option exists to remove.
+   */
+  const traceOptions: AgentCheckOptions = {};
+  const numeric: Array<[string, 'window' | 'minTurns' | 'maxAgentLoop']> = [
+    ['--window', 'window'],
+    ['--min-turns', 'minTurns'],
+    ['--max-agent-loop', 'maxAgentLoop'],
+  ];
+  const VALUED = new Set(['--preset', '--ignore-tools', ...numeric.map(([flag]) => flag)]);
+
+  for (const [flag, key] of numeric) {
+    const at = args.indexOf(flag);
+    if (at === -1) continue;
+    const value = Number(args[at + 1]);
+    if (!Number.isFinite(value) || value < 0) {
+      process.stderr.write(`${flag} expects a number, got: ${args[at + 1] ?? '(nothing)'}\n`);
+      return 2;
+    }
+    traceOptions[key] = value;
+  }
+
+  const ignoreAt = args.indexOf('--ignore-tools');
+  if (ignoreAt !== -1) {
+    const names = (args[ignoreAt + 1] ?? '')
+      .split(',')
+      .map((n) => n.trim())
+      .filter(Boolean);
+    if (names.length === 0) {
+      process.stderr.write('--ignore-tools expects a comma-separated list of tool names\n');
+      return 2;
+    }
+    traceOptions.ignoreTools = names;
+  }
+
+  const usedTraceFlag = [...VALUED].find((f) => f !== '--preset' && args.includes(f));
+  if (!asTrace && usedTraceFlag) {
+    process.stderr.write(`${usedTraceFlag} only applies with --trace\n`);
+    return 2;
+  }
+
   const files = args.filter(
-    (arg, i) => !arg.startsWith('--') && args[i - 1] !== '--preset',
+    (arg, i) => !arg.startsWith('--') && !VALUED.has(args[i - 1] ?? ''),
   );
 
   return (async () => {
@@ -441,7 +502,7 @@ function runCheck(args: string[]): Promise<number> | number {
     const checked: CheckedItem[] = asTrace
       ? traces.map(({ label, turns }) => ({
           label: `${label} (${turns.length} turns)`,
-          verdict: checkTrace(turns),
+          verdict: checkTrace(turns, traceOptions),
         }))
       : items.map(({ label, text }) => ({
           label,
@@ -484,6 +545,13 @@ Options
   --preset <name>  chat | strictJson | longForm | lenient (default chat)
   --jsonl          read input as JSONL, one logged response per line
   --trace          read input as agent runs, one run per line
+
+With --trace, scoring the run instead of the response:
+  --ignore-tools <a,b>   tools whose calls are not compared — a job poller,
+                         a sleep, a clock. By shape those are a loop
+  --max-agent-loop <n>   cycle-coverage threshold (default 0.4)
+  --window <n>           trailing turns inspected (default 12)
+  --min-turns <n>        turns required before judging at all (default 4)
   --json           emit a verdict per response as JSONL, for calibrate
   --quiet          no per-response output; the exit code is the answer
 

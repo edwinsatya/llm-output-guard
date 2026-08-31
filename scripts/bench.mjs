@@ -25,6 +25,7 @@
 import { checkOutput, presets, repetitionScore, tailLoopScore, compressibilityScore,
          truncationScore, jsonScore, scriptMismatchScore, languageMismatchScore,
          promptEchoScore } from '../dist/index.js';
+import { createAgentGuard, checkTrace } from '../dist/agent.js';
 
 const asJson = process.argv.includes('--json');
 
@@ -69,7 +70,7 @@ function time(fn) {
 const SIZES = [500, 2_000, 8_000, 32_000];
 const results = { meta: { node: process.version, platform: process.platform,
                           arch: process.arch, runs: RUNS, warmup: WARMUP },
-                  whole: [], detectors: [], presets: [] };
+                  whole: [], detectors: [], presets: [], agent: [] };
 
 for (const size of SIZES) {
   const text = prose(size);
@@ -105,6 +106,37 @@ for (const [name, preset] of Object.entries(presets)) {
   results.presets.push({ name, ...time(() => checkOutput(text, preset)) });
 }
 
+/*
+ * The cross-turn path, which the numbers above do not describe at all: it reads
+ * a window of turns rather than a span of text, and its cost scales with the
+ * size of the *arguments* a model passes to a tool, not with the length of any
+ * response.
+ *
+ * `observe()` is the interesting one and the pessimistic one. It re-fingerprints
+ * every retained turn on each call rather than caching, so its cost is the
+ * window's, not one turn's -- deliberately, because the alternative is a cache
+ * whose invalidation is a caller's problem, and the measurement below says the
+ * redundancy does not matter next to a model call.
+ */
+const editTurn = (i) => ({
+  text: 'Applying the patch.',
+  toolCalls: [{ name: 'edit_file', arguments: {
+    path: `src/module${i}.ts`,
+    content: 'export const handler = async (req, res) => { /* ... */ };\n'.repeat(160),
+  } }],
+});
+
+const TRACE = Array.from({ length: 12 }, (_, i) => editTurn(i));
+const guard = createAgentGuard();
+let turnNo = 0;
+
+results.agent.push({ name: 'checkTrace', ...time(() => checkTrace(TRACE)) });
+results.agent.push({ name: 'observe, steady', ...time(() => guard.observe(editTurn(turnNo++))) });
+results.agent.push({
+  name: 'checkTrace, prose',
+  ...time(() => checkTrace(Array.from({ length: 12 }, (_, i) => ({ text: `Step ${i}.` })))),
+});
+
 if (asJson) {
   process.stdout.write(JSON.stringify(results, null, 2) + '\n');
 } else {
@@ -122,5 +154,7 @@ if (asJson) {
   for (const r of results.detectors) process.stdout.write(line(r.name, r) + '\n');
   process.stdout.write(`\n  presets, 2 KB input\n`);
   for (const r of results.presets) process.stdout.write(line(r.name, r) + '\n');
+  process.stdout.write(`\n  agent runs, window 12, 9 KB of tool arguments per turn\n`);
+  for (const r of results.agent) process.stdout.write(line(r.name, r) + '\n');
   process.stdout.write('\n');
 }

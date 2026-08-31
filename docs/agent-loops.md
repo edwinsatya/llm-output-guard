@@ -204,6 +204,16 @@ name still reads normally.
 
 Three identical polls sit under the floor without any of this. Four do not.
 
+From the CLI, the same escape hatch is `--ignore-tools`:
+
+```bash
+npx llm-output-guard check runs.jsonl --trace --ignore-tools get_job_status
+```
+
+Naming it before you calibrate matters more than naming it at runtime: a
+calibration sample full of flagged polling runs derives a threshold from false
+positives.
+
 ## Calibrate it against your own runs
 
 `maxAgentLoop: 0.4` is tuned on this repo's eighteen agent fixtures, which are

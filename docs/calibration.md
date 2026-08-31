@@ -159,6 +159,21 @@ whatever your agent already logs is probably already the right shape:
 A file that parses whole as one array is read as a single run, so a run logged
 as one pretty-printed document needs no reshaping either.
 
+**Name your polling tools before you calibrate, not after.** `AGENT_LOOP`
+cannot tell a job poller from a loop — that is a documented limitation, not a
+bug — so a run that polls flags by default, and a sample full of flagged
+polling runs teaches you a threshold shaped by false positives:
+
+```bash
+npx llm-output-guard check runs.jsonl --trace \
+  --ignore-tools get_job_status,sleep,read_clock --json \
+  | npx llm-output-guard calibrate
+```
+
+`--max-agent-loop`, `--window` and `--min-turns` take the other knobs, so a
+candidate threshold can be replayed against the same sample before you commit
+to it.
+
 The report is the one you already know, reading the axis it measured:
 
 ```

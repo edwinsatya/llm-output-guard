@@ -271,7 +271,7 @@ because only one of those is evidence.
 - **Scores, not booleans.** Detectors report 0–1 and leave the threshold decision to you.
 - **Abstains rather than guesses.** Samples too short to judge score 0.
 - **Hand-rolled LZ77** rather than `node:zlib`, so the package stays runtime-agnostic.
-- **Sub-millisecond**, 0.383 ms at 500 B and 1.014 ms at 32 KB, with one detector accounting for most of it. `npm run bench` reproduces it — **[docs/performance.md](docs/performance.md)**
+- **Sub-millisecond**, 0.383 ms at 500 B and 1.014 ms at 32 KB, with one detector accounting for most of it. A 12-turn agent run costs 0.075 ms. `npm run bench` reproduces both — **[docs/performance.md](docs/performance.md)**
 - **Chinese, Japanese and Thai** are handled where they differ: `TAIL_LOOP` switches to character mode, `REPETITION` is blind and says so — **[docs/script-coverage.md](docs/script-coverage.md)**
 
 ## Stability

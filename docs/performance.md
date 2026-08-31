@@ -55,6 +55,31 @@ running it every few hundred characters. See
 [docs/streaming.md](./streaming.md), which documents the conditions that
 deferral depends on.
 
+## Agent runs
+
+`checkTrace` and `createAgentGuard` read a different axis and cost differently:
+the work scales with the size of the **tool arguments** a model passes, not with
+the length of any response. Measured over a 12-turn window carrying 9 KB of
+arguments per turn — a file edit, which is the expensive end of realistic:
+
+| | p50 | p99 |
+|---|---|---|
+| `checkTrace`, 12 tool turns | 0.069 ms | 0.118 ms |
+| `guard.observe()`, steady state | 0.075 ms | 0.163 ms |
+| `checkTrace`, 12 prose turns | 0.003 ms | 0.006 ms |
+
+The prose row is the shape of the cost: with no arguments to canonicalise, the
+same twelve turns are twenty times cheaper. Argument size is the lever here, the
+way `LOW_ENTROPY` is the lever on a single response.
+
+**`observe()` does redundant work, and it is left in.** It re-fingerprints every
+retained turn on each call rather than caching, so it repeats the window's work
+per turn — about 14× one turn's fingerprint at these settings. That was measured
+before it was defended: 0.075 ms per turn means a 200-turn agent run spends
+**15 ms** in the guard, against 200 model calls that take seconds each. A cache
+would buy nothing you can observe and would put an invalidation question into a
+hot path, so the redundancy stays and this paragraph exists instead.
+
 ## Reading these numbers honestly
 
 They are wall-clock timings on one machine (Node 24, darwin/arm64), on an

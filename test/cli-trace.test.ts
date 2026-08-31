@@ -101,6 +101,82 @@ describe('check --trace', () => {
 });
 
 /**
+ * The knobs, and the one that had to exist.
+ *
+ * `AGENT_LOOP` cannot tell a job poller from a loop -- the docs say so and
+ * offer `ignoreTools` as the answer. Until these flags existed the CLI could
+ * not express it, which was worse here than in the library: this is the
+ * *calibration* path, so every polling run flagged and the sample a threshold
+ * was derived from carried exactly the false positives the option removes.
+ */
+describe('check --trace: scoring options', () => {
+  const POLLING = JSON.stringify(
+    Array.from({ length: 5 }, () => ({
+      text: 'Checking whether it finished.',
+      toolCalls: [{ name: 'get_job_status', arguments: { id: 'job_8812' } }],
+    })),
+  );
+
+  it('flags a polling run by default, because by shape it is a loop', async () => {
+    const { code, stdout } = await cli(['check', '--trace'], POLLING + '\n');
+    expect(code).toBe(1);
+    expect(stdout).toContain('AGENT_LOOP');
+  });
+
+  it('passes the same run once the poller is named', async () => {
+    const { code } = await cli(
+      ['check', '--trace', '--ignore-tools', 'get_job_status'], POLLING + '\n');
+    expect(code).toBe(0);
+  });
+
+  it('takes several tool names', async () => {
+    const { code } = await cli(
+      ['check', '--trace', '--ignore-tools', 'sleep, get_job_status ,clock'], POLLING + '\n');
+    expect(code).toBe(0);
+  });
+
+  it('honours a raised threshold', async () => {
+    // The run scores 1.000, so only a threshold at or above it can pass it.
+    const flagged = await cli(['check', '--trace', '--max-agent-loop', '0.9'], POLLING + '\n');
+    expect(flagged.code).toBe(1);
+    const passed = await cli(['check', '--trace', '--max-agent-loop', '1'], POLLING + '\n');
+    expect(passed.code).toBe(0);
+  });
+
+  it('honours a raised floor', async () => {
+    const { code } = await cli(['check', '--trace', '--min-turns', '6'], POLLING + '\n');
+    expect(code, 'five turns is below a floor of six, so it abstains').toBe(0);
+  });
+
+  /* A preset is a per-response contract. Ignoring it silently would leave the
+     caller believing they had tuned something. */
+  it('refuses --preset with --trace and names the right option', async () => {
+    const { code, stderr } = await cli(['check', '--trace', '--preset', 'chat'], POLLING + '\n');
+    expect(code).toBe(2);
+    expect(stderr).toContain('--max-agent-loop');
+  });
+
+  it('refuses a run-scoring flag without --trace', async () => {
+    const { code, stderr } = await cli(['check', '--ignore-tools', 'x'], POLLING + '\n');
+    expect(code).toBe(2);
+    expect(stderr).toContain('only applies with --trace');
+  });
+
+  it('refuses a non-numeric knob rather than defaulting silently', async () => {
+    const { code, stderr } = await cli(['check', '--trace', '--window', 'abc'], POLLING + '\n');
+    expect(code).toBe(2);
+    expect(stderr).toContain('expects a number');
+  });
+
+  /* The flag values must not be mistaken for input files. */
+  it('does not read a flag value as a filename', async () => {
+    const { code } = await cli(
+      ['check', '--trace', '--ignore-tools', 'get_job_status', '--window', '12'], POLLING + '\n');
+    expect(code).toBe(0);
+  });
+});
+
+/**
  * The half that makes this worth building: the scores have to reach
  * `calibrate`, which is what turns "0.4 is our number" into "0.4 is your
  * number".
