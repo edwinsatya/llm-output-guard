@@ -248,6 +248,48 @@ export function extractTurn(value: unknown): AgentTurn | null {
   }
   const record = value as Record<string, unknown>;
 
+  /*
+   * A `role` means this is a chat *message*, not a response envelope -- and
+   * only the model's own messages are turns.
+   *
+   * Both halves of that mattered. Dropping non-model messages is not tidiness:
+   * a user message spelled `{ role: 'user', content: [{ type: 'text', ... }] }`
+   * is shape-identical to an Anthropic response, so without this gate a mixed
+   * history produced a trace built from the *wrong speaker* -- someone typing
+   * "again" three times scored AGENT_LOOP while the model's own turns, spelled
+   * differently, were invisible. A wrong verdict from real data is worse than
+   * no verdict, and it is the trace-level twin of the partial-mapping failure
+   * `toTurn` refuses.
+   *
+   * `model` is Gemini's spelling of `assistant`.
+   */
+  if (typeof record.role === 'string' && record.role !== 'assistant' && record.role !== 'model') {
+    return null;
+  }
+
+  /*
+   * A bare assistant message, which is the commonest thing anyone actually
+   * has: an agent loop keeps a `messages` array, and logs it far more often
+   * than it logs raw completion envelopes. Until this branch existed the
+   * calibration path could not read the data people already had -- every
+   * message in an ordinary history was dropped, the model's included.
+   *
+   * Distinguished from a response by having `content` as a *string* beside a
+   * call list; a response carries `choices`, `output`, `candidates`, or an
+   * array `content`, all of which are matched below.
+   */
+  const messageCalls = Array.isArray(record.tool_calls)
+    ? record.tool_calls
+    : Array.isArray(record.toolCalls) && typeof record.content === 'string'
+      ? record.toolCalls
+      : null;
+  if (messageCalls && (typeof record.content === 'string' || record.content == null)) {
+    return fromOpenAI({ choices: [{ message: { ...record, tool_calls: messageCalls } }] });
+  }
+  if (typeof record.content === 'string' && record.role != null) {
+    return record.content.length > 0 ? { text: record.content } : null;
+  }
+
   // Already a turn: a `toolCalls` list whose entries speak `name`/`arguments`.
   if (Array.isArray(record.toolCalls)) {
     const calls = record.toolCalls as Array<Record<string, unknown>>;
@@ -573,6 +615,12 @@ a native turn, or the raw envelope from any adapter this package ships:
 
   [{"text":"Reading.","toolCalls":[{"name":"read_file","arguments":{"p":"a.ts"}}]}]
   {"run":"job-14","turns":[{"choices":[{"message":{"content":"..."}}]}]}
+
+A chat history works as-is: only the model's own messages are read, so system,
+user and tool messages are skipped rather than counted as turns.
+
+  {"turns":[{"role":"assistant","content":"…","tool_calls":[…]},
+            {"role":"tool","content":"…"}]}
 
 A file that parses whole as one array is read as a single run, so a run logged
 as one pretty-printed document works without reshaping.

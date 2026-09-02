@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractTurn, extractTurns, extractScores } from '../src/cli.js';
+import { checkTrace } from '../src/agent.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..');
@@ -273,6 +274,99 @@ describe('extractTurn: reads what people actually log', () => {
     expect(extractTurn({ unrelated: true })).toBeNull();
     expect(extractTurn(null)).toBeNull();
     expect(extractTurn(42)).toBeNull();
+  });
+});
+
+/**
+ * A chat history, which is what people actually have.
+ *
+ * An agent loop keeps a `messages` array and logs that far more often than it
+ * logs raw completion envelopes. Two failures met here, and the second is the
+ * serious one:
+ *
+ *  - every message in an ordinary history was dropped, the model's included,
+ *    so the calibration path could not read the commonest input there is;
+ *  - a user message spelled `{ role: 'user', content: [{ type: 'text' }] }` is
+ *    shape-identical to an Anthropic response, so it *did* map -- meaning a
+ *    mixed history built a trace from the wrong speaker while the model's own
+ *    turns stayed invisible. A wrong verdict from real data is worse than none.
+ */
+describe('extractTurn: a chat history', () => {
+  const assistant = (text: string, tool?: string) => ({
+    role: 'assistant',
+    content: text,
+    ...(tool ? { tool_calls: [{ function: { name: tool, arguments: '{}' } }] } : {}),
+  });
+
+  it('reads a bare assistant message, calls and all', () => {
+    const turn = extractTurn(assistant('Running it.', 'run_tests'));
+    expect(turn?.text).toBe('Running it.');
+    expect(turn?.toolCalls?.[0]?.name).toBe('run_tests');
+  });
+
+  it('reads an assistant message that is prose only', () => {
+    expect(extractTurn(assistant('All four tests pass now.'))?.text).toBe(
+      'All four tests pass now.',
+    );
+  });
+
+  it('reads the camelCase call list on a bare message too', () => {
+    const turn = extractTurn({
+      role: 'assistant',
+      content: 'Looking.',
+      toolCalls: [{ function: { name: 'search', arguments: '{}' } }],
+    });
+    expect(turn?.toolCalls?.[0]?.name).toBe('search');
+  });
+
+  for (const role of ['system', 'user', 'tool', 'developer', 'function']) {
+    it(`drops a ${role} message`, () => {
+      expect(extractTurn({ role, content: 'not the model speaking' })).toBeNull();
+    });
+  }
+
+  /* The one that produced a wrong answer rather than no answer. */
+  it('drops a user message whose content is an array', () => {
+    expect(
+      extractTurn({ role: 'user', content: [{ type: 'text', text: 'again please' }] }),
+      'shape-identical to an Anthropic response — only the role separates them',
+    ).toBeNull();
+  });
+
+  it('scores a whole history by the model turns alone', () => {
+    const history = [
+      { role: 'system', content: 'You are a helpful agent.' },
+      { role: 'user', content: 'Fix the failing test.' },
+      { role: 'user', content: [{ type: 'text', text: 'again please' }] },
+      assistant('Reading the test.', 'read_file'),
+      { role: 'tool', tool_call_id: 'c1', content: 'expect(x).toBe(1)' },
+      ...Array.from({ length: 4 }, () => [
+        assistant('Running it.', 'run_tests'),
+        { role: 'tool', tool_call_id: 'c', content: 'FAIL' },
+      ]).flat(),
+    ];
+
+    const turns = extractTurns(history);
+    expect(turns, 'five assistant messages, nothing else').toHaveLength(5);
+
+    const verdict = checkTrace(turns!);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reasons[0]!.message).toContain('run_tests');
+  });
+
+  /* An Anthropic response also carries role: 'assistant' -- it must still read
+     as a response rather than being caught by the bare-message branch. */
+  it('still reads an anthropic response, which is also role assistant', () => {
+    const turn = extractTurn({
+      role: 'assistant',
+      content: [
+        { type: 'text', text: 'Reading.' },
+        { type: 'tool_use', name: 'read_file', input: { path: 'a.ts' } },
+      ],
+      stop_reason: 'tool_use',
+    });
+    expect(turn?.text).toBe('Reading.');
+    expect(turn?.toolCalls?.[0]?.name).toBe('read_file');
   });
 });
 

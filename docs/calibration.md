@@ -159,6 +159,17 @@ whatever your agent already logs is probably already the right shape:
 A file that parses whole as one array is read as a single run, so a run logged
 as one pretty-printed document needs no reshaping either.
 
+**A chat history works without reshaping**, which is the shape most people
+have: an agent loop keeps a `messages` array and logs that far more often than
+it logs raw completion envelopes. Only the model's own messages are read —
+`system`, `user` and `tool` messages are skipped rather than counted as turns,
+so a run of twelve messages scores on the four the model actually produced.
+
+That gate is not tidiness. A user message spelled
+`{ role: 'user', content: [{ type: 'text', … }] }` is shape-identical to an
+Anthropic response, so without it a mixed history built a trace from the wrong
+speaker.
+
 **Name your polling tools before you calibrate, not after.** `AGENT_LOOP`
 cannot tell a job poller from a loop — that is a documented limitation, not a
 bug — so a run that polls flags by default, and a sample full of flagged
