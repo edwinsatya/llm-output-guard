@@ -370,6 +370,63 @@ describe('extractTurn: a chat history', () => {
   });
 });
 
+/**
+ * Where a logged run keeps its turns.
+ *
+ * `messages` is OpenAI's own request field and what essentially every agent
+ * framework calls its history -- the likeliest key there is, and the one this
+ * could not read. The intent stated at the top of `cli.ts` is that you should
+ * not have to reshape your logs to calibrate, because a step you have to
+ * prepare for is one you do not run.
+ */
+describe('extractTurns: the containers people log', () => {
+  const assistant = (text: string, tool: string) => ({
+    role: 'assistant',
+    content: text,
+    tool_calls: [{ function: { name: tool, arguments: '{}' } }],
+  });
+  const run = [
+    assistant('Reading.', 'read_file'),
+    assistant('Running it.', 'run_tests'),
+    assistant('Running it.', 'run_tests'),
+    assistant('Running it.', 'run_tests'),
+    assistant('Running it.', 'run_tests'),
+  ];
+
+  for (const key of ['turns', 'messages', 'history', 'conversation', 'steps']) {
+    it(`reads a run under "${key}"`, () => {
+      expect(extractTurns({ [key]: run })).toHaveLength(5);
+    });
+  }
+
+  it('reads a whole request body, which carries other fields too', () => {
+    expect(extractTurns({ model: 'gpt-4', temperature: 0.2, messages: run })).toHaveLength(5);
+  });
+
+  it('reads a run logged one object down inside a wider record', () => {
+    expect(extractTurns({ run: 'job-14', at: 12345, log: { messages: run } })).toHaveLength(5);
+  });
+
+  /**
+   * The reason this looks for named keys instead of any array.
+   *
+   * Scanning every array-valued property was written first and thrown away:
+   * `extractTurn` reads a bare string as a prose turn, so a record carrying
+   * tags became a two-turn run, and a repeated tag list would have scored
+   * AGENT_LOOP. Same wrong-speaker failure as reading a user message, one
+   * level up, and caused by the liberality meant to help.
+   */
+  it('does not mistake an unrelated array for a run', () => {
+    expect(extractTurns({ tags: ['deploy', 'urgent'], ids: [1, 2, 3] })).toBeNull();
+    expect(extractTurns({ labels: ['a', 'a', 'a', 'a', 'a'] })).toBeNull();
+  });
+
+  /* A bare array of strings is still a prose run -- there the caller chose it. */
+  it('still reads an explicit array of prose turns', () => {
+    expect(extractTurns(['talking', 'talking', 'talking', 'talking'])).toHaveLength(4);
+  });
+});
+
 describe('extractTurns', () => {
   it('reads a bare array and a turns key alike', () => {
     const turns = [{ text: 'a' }, { text: 'b' }];

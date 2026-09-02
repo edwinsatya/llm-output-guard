@@ -159,6 +159,10 @@ whatever your agent already logs is probably already the right shape:
 A file that parses whole as one array is read as a single run, so a run logged
 as one pretty-printed document needs no reshaping either.
 
+The turns are found under `turns`, `messages`, `history`, `conversation` or
+`steps`, at the top level or one object down — so a whole request body, or a run
+logged inside a wider record, needs no reshaping.
+
 **A chat history works without reshaping**, which is the shape most people
 have: an agent loop keeps a `messages` array and logs that far more often than
 it logs raw completion envelopes. Only the model's own messages are read —

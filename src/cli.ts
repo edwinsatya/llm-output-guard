@@ -338,16 +338,60 @@ export function extractTurn(value: unknown): AgentTurn | null {
  * A bare array of turns, or an object carrying them under `turns` -- which is
  * what a log record wrapping a run looks like.
  */
-export function extractTurns(value: unknown): AgentTurn[] | null {
-  const list = Array.isArray(value)
-    ? value
-    : value && typeof value === 'object' && Array.isArray((value as { turns?: unknown }).turns)
-      ? ((value as { turns: unknown[] }).turns)
-      : null;
-  if (!list) return null;
+/**
+ * Where a logged run keeps its turns.
+ *
+ * `messages` is first among the named keys for a reason: it is OpenAI's own
+ * request field and what essentially every agent framework calls its history,
+ * so it is the likeliest key there is -- and it was the one shape this could
+ * not read. `turns` stays for the shape this package's own docs show.
+ */
+const TURN_KEYS = ['turns', 'messages', 'history', 'conversation', 'steps'] as const;
 
-  const turns = list.map(extractTurn).filter((turn): turn is AgentTurn => turn !== null);
-  return turns.length > 0 ? turns : null;
+/**
+ * The turns of one logged run, or `null` when the line holds none.
+ *
+ * A bare array, or one of the named keys above -- at the top level or one
+ * object down, which is what a run logged inside a wider record looks like.
+ *
+ * **Named keys only, deliberately.** Scanning every array-valued property was
+ * written first and thrown away: `extractTurn` reads a bare string as a prose
+ * turn, so `{ tags: ['a', 'b'] }` became a two-turn run, and a repeated tag
+ * list would have scored `AGENT_LOOP`. That is the same wrong-speaker failure
+ * the `role` gate exists to prevent, reintroduced one level up by the very
+ * liberality meant to help. Liberality about *shape* is the point here;
+ * guessing which field holds a conversation is not.
+ */
+export function extractTurns(value: unknown): AgentTurn[] | null {
+  const read = (list: unknown): AgentTurn[] | null => {
+    if (!Array.isArray(list)) return null;
+    const turns = list.map(extractTurn).filter((turn): turn is AgentTurn => turn !== null);
+    return turns.length > 0 ? turns : null;
+  };
+
+  if (Array.isArray(value)) return read(value);
+  if (!value || typeof value !== 'object') return null;
+
+  const record = value as Record<string, unknown>;
+  const named = (from: Record<string, unknown>): AgentTurn[] | null => {
+    for (const key of TURN_KEYS) {
+      const found = read(from[key]);
+      if (found) return found;
+    }
+    return null;
+  };
+
+  const here = named(record);
+  if (here) return here;
+
+  // One level down, for a run logged inside a wider record.
+  for (const nested of Object.values(record)) {
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      const found = named(nested as Record<string, unknown>);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 
 interface CheckedItem {
@@ -616,8 +660,10 @@ a native turn, or the raw envelope from any adapter this package ships:
   [{"text":"Reading.","toolCalls":[{"name":"read_file","arguments":{"p":"a.ts"}}]}]
   {"run":"job-14","turns":[{"choices":[{"message":{"content":"..."}}]}]}
 
-A chat history works as-is: only the model's own messages are read, so system,
-user and tool messages are skipped rather than counted as turns.
+The turns are found under "turns", "messages", "history", "conversation" or
+"steps" -- at the top level or one object down -- so a request body or a logged
+run needs no reshaping. Only the model's own messages are read: system, user
+and tool messages are skipped rather than counted as turns.
 
   {"turns":[{"role":"assistant","content":"…","tool_calls":[…]},
             {"role":"tool","content":"…"}]}
