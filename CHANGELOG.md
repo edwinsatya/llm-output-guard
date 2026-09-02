@@ -1,5 +1,63 @@
 # llm-output-guard
 
+## 1.11.1
+
+### Patch Changes
+
+- c017d9e: `check --trace` finds the turns where they actually are.
+
+  It read a bare array or a `turns` key, and nothing else — so the likeliest
+  container there is did not work:
+
+  ```jsonl
+  {"model":"gpt-4","messages":[{"role":"assistant", …}]}
+  ```
+
+  `messages` is OpenAI's own request field and what essentially every agent
+  framework calls its history. Now `turns`, `messages`, `history`, `conversation`
+  and `steps` all read, at the top level or one object down — so a whole request
+  body, or a run logged inside a wider record, needs no reshaping. That is the
+  intent stated at the top of `cli.ts`: a calibration step you have to prepare
+  your logs for is one you do not run.
+
+  **Named keys rather than any array, and that limit was learned the hard way.**
+  Scanning every array-valued property was written first and thrown away.
+  `extractTurn` reads a bare string as a prose turn, so `{ tags: ['a', 'b'] }`
+  became a two-turn run and a repeated tag list would have scored `AGENT_LOOP` —
+  the same wrong-speaker failure the `role` gate had just fixed, reintroduced one
+  level up by the liberality meant to help. Being liberal about the _shape_ of a
+  turn is the point here; guessing which field holds a conversation is not.
+
+- 716b902: `check --trace` reads a chat history, and stops reading the wrong speaker.
+
+  Two failures, found by asking what someone actually has to hand. An agent loop
+  keeps a `messages` array and logs _that_ far more often than it logs raw
+  completion envelopes — and a normal history did not work:
+
+  ```jsonl
+  {"turns":[{"role":"assistant","content":"Running it.","tool_calls":[…]},
+            {"role":"tool","content":"FAIL"}]}
+  ```
+
+  **Every message in it was dropped, the model's included.** `extractTurn` knew
+  completions — `choices[0].message` — but not bare messages, so the calibration
+  path could not read the commonest input there is. It reported `No agent turns
+found` and exited 2.
+
+  **The second one gave a wrong answer rather than none, and is the serious half.**
+  A user message spelled `{ role: 'user', content: [{ type: 'text', … }] }` is
+  shape-identical to an Anthropic response, so it _did_ map. A mixed history
+  therefore built a trace out of the wrong speaker: someone typing "again" three
+  times scored `AGENT_LOOP` while the model's own turns, spelled differently,
+  stayed invisible. That is the trace-level twin of the partial-mapping failure
+  `toTurn` already refuses, and it is worse, because a wrong verdict from real
+  data outranks a missing one.
+
+  One idea closes both: a `role` means this is a message rather than a response,
+  and only `assistant` — or `model`, Gemini's spelling — is a turn. An Anthropic
+  response also carries `role: 'assistant'`, so it keeps reading as a response;
+  only the role now separates it from the request message it otherwise resembles.
+
 ## 1.11.0
 
 ### Minor Changes
