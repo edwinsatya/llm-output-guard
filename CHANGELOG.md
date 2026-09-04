@@ -1,5 +1,71 @@
 # llm-output-guard
 
+## 1.11.2
+
+### Patch Changes
+
+- 4ee8e00: `npm run size` — the front-page size claim, measured and enforced.
+
+  The README said **~5 KB gzipped**. The root entry measures **6.1 KB** min+gzip,
+  so the claim had drifted 24% — while the bundlejs badge two lines above it
+  displayed the real figure the whole time. A number in prose is the cheapest
+  thing in a repo to go stale: it is written once, true once, and nothing fails
+  when it stops being.
+
+  So it is a budget now, asserted in CI beside the zero-dependency check, for the
+  same reason that one exists.
+
+  ```
+    entry         min+gzip    budget
+    .               6.1 KB     7.0 KB
+    ./openai        6.7 KB     7.6 KB
+    ./agent         2.2 KB     2.7 KB
+  ```
+
+  **Measured the way a bundler sees it**, which is not the size of
+  `dist/index.js`: that file is code-split and re-exports from shared chunks, so
+  on its own it reads about a third of the truth. Each entry is bundled and
+  minified first.
+
+  Two things the table says that prose had not. An adapter subpath is **not
+  additive** with the root — it bundles the detectors it needs, so importing both
+  costs about what the larger costs alone. And `./agent` is a quarter the size of
+  everything else because it shares almost nothing with the per-response
+  detectors: a different axis, and very nearly a different package.
+
+  Budgets sit ~15% above today's figures, so ordinary changes do not trip them
+  while a dependency creeping in would. Raising one is a deliberate act with a
+  diff, and the README sentence moves with it.
+
+- d8fc5c0: Subpath types resolve under classic `moduleResolution: "node"`.
+
+  `node` resolution ignores the `exports` map entirely. It finds the root through
+  the top-level `types` field and finds **nothing** for a subpath, so every
+  adapter failed to typecheck:
+
+  ```ts
+  import { withOutputGuard } from "llm-output-guard/openai";
+  // TS2307: Cannot find module 'llm-output-guard/openai' or its
+  // corresponding type declarations.
+  ```
+
+  Measured on the packed tarball: `./openai` and `./agent` both failed under
+  `node`, while `node16`, `nodenext` and `bundler` were all fine. `node` is still
+  the default whenever `module` is `commonjs`, so a consumer on an older tsconfig
+  could import the root and not one adapter — and the runtime was never affected,
+  which is what made it quiet: `require('llm-output-guard/openai')` worked, and
+  only the build complained.
+
+  Nothing here would have caught it. This repo typechecks under `bundler`, and so
+  does `check:peers`, so both halves of the existing type coverage sat on the side
+  of the fence where it works.
+
+  Fixed with `typesVersions`, which is a second list of the same subpaths and
+  therefore exactly the kind of list that drifts — so `test/surface.test.ts`
+  derives it from `exports` rather than trusting it, and a subpath added without
+  a mapping now fails there. All four resolutions verified against the packed
+  tarball, with the CJS `require` path re-checked alongside.
+
 ## 1.11.1
 
 ### Patch Changes
