@@ -85,6 +85,18 @@ jobs:
       - run: npm ci
       - run: node scripts/check-peers.mjs ${{ matrix.peer }} ${{ matrix.version }}
 
+  size-budget:
+    # The README quotes a size on its front page. A number in prose goes stale
+    # silently -- this one had drifted 24% before anything noticed -- so it is
+    # asserted here for the same reason zero dependencies is.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: npm run size
+
   no-runtime-deps:
     runs-on: ubuntu-latest
     steps:

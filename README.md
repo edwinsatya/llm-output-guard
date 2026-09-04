@@ -32,7 +32,7 @@ Your retry layer watches for `429`, `5xx` and timeouts. It cannot see a model th
 looped until `max_tokens`, returned `{}`, stopped mid-sentence, or answered in the
 wrong language — because all of those arrive as a **successful request**.
 
-This produces the signal that layer is missing. Zero dependencies, ~5 KB gzipped,
+This produces the signal that layer is missing. Zero dependencies, ~6 KB min+gzip,
 synchronous, no network.
 
 ```bash
@@ -267,6 +267,7 @@ because only one of those is evidence.
 ## Design notes
 
 - **Zero runtime dependencies**, enforced in CI. Node ≥ 18; works on edge, browser, Deno, Bun.
+- **The size claim is a budget, not a memory.** `npm run size` bundles each entry, minifies and gzips it, and fails over budget — enforced in CI beside the zero-dependency check, because a number in prose is the cheapest thing in a repo to go stale.
 - **Types resolve on old and new TypeScript alike.** Every subpath is listed in `typesVersions` as well as `exports`, so `moduleResolution: "node"` — still the default under `module: commonjs` — sees the adapters instead of only the root.
 - **Pure and synchronous.** No network, no clock, no randomness — safe on a hot path, trivial to test.
 - **Scores, not booleans.** Detectors report 0–1 and leave the threshold decision to you.

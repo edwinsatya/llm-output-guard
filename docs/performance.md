@@ -80,6 +80,33 @@ before it was defended: 0.075 ms per turn means a 200-turn agent run spends
 would buy nothing you can observe and would put an invalidation question into a
 hot path, so the redundancy stays and this paragraph exists instead.
 
+## Size
+
+Measured the way a bundler sees it — each entry bundled, minified and gzipped,
+which is not the size of `dist/index.js`. That file is code-split and re-exports
+from shared chunks, so on its own it reads about a third of the truth.
+
+| Entry | min+gzip |
+|---|---|
+| `llm-output-guard` | 6.1 KB |
+| `./openai` | 6.7 KB |
+| `./anthropic` | 6.4 KB |
+| `./google` | 6.6 KB |
+| `./ai-sdk` | 5.9 KB |
+| `./agent` | 2.2 KB |
+
+An adapter subpath is *not* additive with the root: it bundles the detectors it
+needs, so importing both costs about what the larger one costs alone. `./agent`
+is the small one because it shares almost nothing with the per-response
+detectors — a different axis, and nearly a different package.
+
+`npm run size` reproduces the table and **fails over budget**. The budgets sit
+about 15% above these figures, and raising one is a deliberate act with a diff,
+because the README quotes this number on its front page and a figure in prose is
+the cheapest thing in a repo to go stale. This one had drifted 24% before
+anything noticed — while the bundlejs badge two lines above it showed the real
+figure the whole time.
+
 ## Reading these numbers honestly
 
 They are wall-clock timings on one machine (Node 24, darwin/arm64), on an
