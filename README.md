@@ -267,6 +267,7 @@ because only one of those is evidence.
 ## Design notes
 
 - **Zero runtime dependencies**, enforced in CI. Node ≥ 18; works on edge, browser, Deno, Bun.
+- **Types resolve on old and new TypeScript alike.** Every subpath is listed in `typesVersions` as well as `exports`, so `moduleResolution: "node"` — still the default under `module: commonjs` — sees the adapters instead of only the root.
 - **Pure and synchronous.** No network, no clock, no randomness — safe on a hot path, trivial to test.
 - **Scores, not booleans.** Detectors report 0–1 and leave the threshold decision to you.
 - **Abstains rather than guesses.** Samples too short to judge score 0.

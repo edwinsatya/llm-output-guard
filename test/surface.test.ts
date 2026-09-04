@@ -132,6 +132,45 @@ describe('public surface', () => {
   });
 
   /**
+   * Subpath types must resolve under classic node10 resolution too.
+   *
+   * `moduleResolution: "node"` ignores the `exports` map entirely, so it finds
+   * the root through the top-level `types` field and finds **nothing** for a
+   * subpath. Measured on the packed tarball before this existed: `./openai` and
+   * `./agent` both failed with TS2307 under `node`, while `node16`, `nodenext`
+   * and `bundler` were all fine.
+   *
+   * That is a large blast radius for an invisible bug. `node` is still the
+   * default whenever `module` is `commonjs`, so every consumer on an older
+   * tsconfig could import the root and not one adapter -- and nothing here
+   * would have noticed, because this repo and `check:peers` both typecheck
+   * under modern resolution.
+   *
+   * `typesVersions` is the shim that fixes it, and it is a second list of the
+   * same subpaths, which is exactly the kind of list that drifts. So it is
+   * derived from `exports` here rather than trusted.
+   */
+  it('maps every subpath in typesVersions, for node10 resolution', () => {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    const subpaths = Object.keys(pkg.exports)
+      .filter((k) => k.startsWith('./') && k !== './package.json')
+      .map((k) => k.slice(2))
+      .sort();
+
+    const mapped = pkg.typesVersions?.['*'] ?? {};
+    expect(
+      Object.keys(mapped).sort(),
+      'a subpath in exports with no typesVersions entry is invisible to node10',
+    ).toEqual(subpaths);
+
+    for (const name of subpaths) {
+      // The same declaration the exports map points at, not a second opinion.
+      const declared = pkg.exports[`./${name}`].import.types;
+      expect(mapped[name], `typesVersions["${name}"] must match exports`).toEqual([declared]);
+    }
+  });
+
+  /**
    * Every adapter subpath is an optional peer, and the main entry point has
    * none. This is the zero-dependency claim in assertable form: `dependencies`
    * must stay empty no matter how many providers get adapters, and a peer that

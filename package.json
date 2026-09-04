@@ -23,6 +23,25 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "ai-sdk": [
+        "./dist/ai-sdk.d.ts"
+      ],
+      "openai": [
+        "./dist/openai.d.ts"
+      ],
+      "anthropic": [
+        "./dist/anthropic.d.ts"
+      ],
+      "google": [
+        "./dist/google.d.ts"
+      ],
+      "agent": [
+        "./dist/agent.d.ts"
+      ]
+    }
+  },
   "exports": {
     ".": {
       "import": {
