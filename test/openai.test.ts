@@ -396,3 +396,62 @@ describe('withOutputGuard on a real OpenAI client', () => {
     });
   });
 });
+
+/**
+ * What each `onDegenerate` actually does on a **non-streaming** call.
+ *
+ * This exists because the package's own examples got it wrong. The README's
+ * headline wrap, every adapter's JSDoc and four blocks in `docs/adapters.md`
+ * all showed `onDegenerate: 'abort'` above non-streaming calls annotated
+ * `// guarded` -- and `'abort'` ends a stream, of which a completion has none.
+ * The guard measured the response, reported it, and handed it back.
+ *
+ * One JSDoc block said so and contradicted itself in the same breath: "all the
+ * guard can do is stop a bad answer being used as a good one", directly under
+ * an example configured not to.
+ *
+ * The behaviour was right the whole time; the documentation was not. So the
+ * behaviour is pinned here, and the docs quote this table.
+ */
+describe('onDegenerate on a non-streaming call', () => {
+  const LOOP = 'Yes. '.repeat(120);
+  const completion = { choices: [{ message: { content: LOOP }, finish_reason: 'stop' }] };
+  const clientWith = (action: 'throw' | 'abort' | 'ignore', seen: Verdict[]) =>
+    withOutputGuard(
+      { chat: { completions: { create: () => Promise.resolve(completion) } } },
+      { ...presets.chat, onDegenerate: action, onVerdict: (v: Verdict) => seen.push(v) },
+    );
+
+  it("'throw' fails the call", async () => {
+    const seen: Verdict[] = [];
+    await expect(clientWith('throw', seen).chat.completions.create()).rejects.toThrow(
+      DegenerateOutputError,
+    );
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.ok).toBe(false);
+  });
+
+  /* The one the docs got wrong. Reported, judged degenerate, and returned. */
+  it("'abort' reports and returns the response, stopping nothing", async () => {
+    const seen: Verdict[] = [];
+    const result = await clientWith('abort', seen).chat.completions.create();
+    expect(result, 'there is no stream to end, so the response comes back').toBe(completion);
+    expect(seen[0]!.ok, 'and it was judged degenerate all the same').toBe(false);
+  });
+
+  it("'ignore' reports and returns the response", async () => {
+    const seen: Verdict[] = [];
+    const result = await clientWith('ignore', seen).chat.completions.create();
+    expect(result).toBe(completion);
+    expect(seen[0]!.ok).toBe(false);
+  });
+
+  /* `'throw'` is the default, so the shortest correct wrap is the bare one. */
+  it('defaults to throwing when no action is given', async () => {
+    const client = withOutputGuard(
+      { chat: { completions: { create: () => Promise.resolve(completion) } } },
+      { ...presets.chat },
+    );
+    await expect(client.chat.completions.create()).rejects.toThrow(DegenerateOutputError);
+  });
+});

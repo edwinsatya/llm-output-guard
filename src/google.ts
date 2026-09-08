@@ -276,7 +276,7 @@ const GUARDED: readonly GuardedPath[] = [
  *
  * const ai = withOutputGuard(new GoogleGenAI({ apiKey }), {
  *   ...presets.chat,
- *   onDegenerate: 'abort',
+ *   onDegenerate: 'throw',
  * });
  * ```
  *

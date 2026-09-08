@@ -170,6 +170,12 @@ and then answers scores in the middle by design, and a longer answer dilutes the
 same leak further. Lower it toward 0.4 to catch those too, and expect ordinary
 preamble to come with them.
 
+**It abstains under 40 word tokens**, which is the first thing to know when
+trying it by hand. A short prompt echoed perfectly scores **0.000**, not 1.000 —
+the same rule as everywhere else in this package, since a dozen shared words is
+not evidence that anything was copied. The table above is measured on prompts
+past that floor; a one-line prompt will not reproduce it.
+
 **It does not run mid-stream**, and the reason is sharper than for
 `SCRIPT_MISMATCH`: the score is a share of the whole output, so a trailing window
 measures the share of that window. The same leak-then-answer response reads 0.707

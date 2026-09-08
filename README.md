@@ -90,8 +90,14 @@ a boolean** — you pick the line.
 import OpenAI from 'openai';
 import { withOutputGuard } from 'llm-output-guard/openai';
 
-const client = withOutputGuard(new OpenAI(), { ...presets.chat, onDegenerate: 'abort' });
+const client = withOutputGuard(new OpenAI(), { ...presets.chat, onDegenerate: 'throw' });
 ```
+
+`onDegenerate` decides what a failed check does: **`'throw'`** (the default)
+fails the call, and on a stream also cancels the request. `'abort'` is the
+streaming-only alternative — it ends the stream and keeps what arrived, and on a
+non-streaming call it stops nothing. `'ignore'` reports and changes nothing,
+which is how to roll out.
 
 Adapters for the **OpenAI SDK** (both `chat.completions` and `responses`),
 **Anthropic**, **Google Gemini** and the **Vercel AI SDK** — plus anything
@@ -207,7 +213,9 @@ withOutputGuard(new OpenAI(), { ...presets.chat, checkPromptEcho: true });
 ```
 
 Not for rewrite, translate or summarise endpoints, where copying the input is
-the job. [More →](docs/detectors.md#returning-the-prompt-instead-of-an-answer)
+the job. Abstains under 40 words, so a one-line prompt echoed perfectly still
+scores 0.000.
+[More →](docs/detectors.md#returning-the-prompt-instead-of-an-answer)
 
 ## The verdict
 

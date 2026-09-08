@@ -14,7 +14,7 @@ import { presets } from 'llm-output-guard';
 
 const model = wrapLanguageModel({
   model: groq('llama-3.3-70b-versatile'),
-  middleware: outputGuard({ ...presets.chat, onDegenerate: 'abort' }),
+  middleware: outputGuard({ ...presets.chat, onDegenerate: 'throw' }),
 });
 ```
 
@@ -67,12 +67,32 @@ import { presets } from 'llm-output-guard';
 
 const client = withOutputGuard(new OpenAI(), {
   ...presets.chat,
-  onDegenerate: 'abort',
+  onDegenerate: 'throw',
 });
 
 await client.chat.completions.create({ model, messages });   // guarded
 await client.responses.create({ model, input });             // guarded
 ```
+
+### `throw` stops a bad answer. `abort` saves tokens.
+
+They are not two strengths of the same setting, and picking the wrong one is
+the quiet failure this package exists to catch:
+
+| | non-streaming call | stream |
+|---|---|---|
+| `'throw'` (default) | **fails the call** with `DegenerateOutputError` | fails it *and* cancels the request |
+| `'abort'` | reports to `onVerdict`, **returns the response** | ends the stream, keeps what arrived |
+| `'ignore'` | reports only | reports only |
+
+**`'abort'` on a non-streaming call does not stop anything.** There is no stream
+to end, so the guard measures the response, reports it, and hands it back — a
+guard you believe in and do not have. It is the right choice on a stream where a
+partial answer beats no answer, and only there.
+
+`'throw'` is the default, so the shortest correct wrap is the one with no
+`onDegenerate` at all.
+
 
 The Responses API spells its stop reason `incomplete_details.reason` rather than
 `finish_reason`, and its length stop `max_output_tokens` rather than `length`.
@@ -165,7 +185,7 @@ import { presets } from 'llm-output-guard';
 
 const client = withOutputGuard(new Anthropic(), {
   ...presets.chat,
-  onDegenerate: 'abort',
+  onDegenerate: 'throw',
 });
 
 await client.messages.create({ model, max_tokens, messages });               // guarded
@@ -211,7 +231,7 @@ import { presets } from 'llm-output-guard';
 
 const ai = withOutputGuard(new GoogleGenAI({ apiKey }), {
   ...presets.chat,
-  onDegenerate: 'abort',
+  onDegenerate: 'throw',
 });
 
 await ai.models.generateContent({ model, contents });        // guarded

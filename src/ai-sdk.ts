@@ -93,7 +93,7 @@ export interface OutputGuardOptions extends StreamGuardOptions, AdapterGuardOpti
  *
  * const model = wrapLanguageModel({
  *   model: groq('llama-3.3-70b-versatile'),
- *   middleware: outputGuard({ ...presets.chat, onDegenerate: 'abort' }),
+ *   middleware: outputGuard({ ...presets.chat, onDegenerate: 'throw' }),
  * });
  * ```
  *

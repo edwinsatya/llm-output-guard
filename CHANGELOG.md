@@ -1,5 +1,72 @@
 # llm-output-guard
 
+## 1.11.3
+
+### Patch Changes
+
+- a4a44df: `esbuild` is a declared devDependency, and undeclared imports now fail a test.
+
+  Two build scripts imported it directly — `build-playground.mjs` and the
+  `size.mjs` added last release — and it was declared nowhere. It resolved only
+  because `tsup` depends on it and npm hoists it to the top level:
+
+  ```
+  devDependencies.esbuild → null
+  resolves via: tsup@8.5.1 → esbuild@0.27.7
+  ```
+
+  It worked, and it worked by accident. A tsup release that moves its esbuild
+  range moves ours silently; pnpm and Yarn PnP do not hoist, so a clone with
+  either fails outright. Both scripts sit on the release path — `playground` runs
+  inside `prepublishOnly`, and `size` is a CI job that gates a merge.
+
+  Same shape as the `no-runtime-deps` job one level down: **a dependency you did
+  not declare is a dependency you did not choose.** So it is asserted rather than
+  noticed — `test/scripts-deps.test.ts` reads every import in `scripts/` and fails
+  on any package missing from `package.json`. Verified by removing the
+  declaration: both scripts fail, by name.
+
+  Writing that check found the second thing worth recording. It scans with a
+  regex, so it strips comments and template literals first, and both were
+  load-bearing. `check-peers.mjs` holds whole probe files as backtick strings —
+  source it _writes into_ a temp consumer — which contain
+  `import ... from 'llm-output-guard'`, reported as the package depending on
+  itself. And a JSDoc block in that same file carries an **escaped** backtick,
+  which mis-pairs the template stripping and left a fenced example inside a
+  comment reading as an import. Both are in the test's own comments, because the
+  next person to touch that regex needs them.
+
+- The adapter examples showed `onDegenerate: 'abort'`, which on a non-streaming
+  call stops nothing.
+
+  `'abort'` ends a _stream_ and keeps what arrived. A `chat.completions.create()`
+  has no stream to end, so the guard measured the response, reported it through
+  `onVerdict`, and handed it back — a guard you believe in and do not have, which
+  is the failure this package was written about.
+
+  It was in the README's headline wrap, all four adapters' JSDoc, and four blocks
+  of `docs/adapters.md`, several of them directly above non-streaming calls
+  annotated `// guarded`. One JSDoc block contradicted itself in the same breath:
+
+  > On a non-streaming request the tokens are already bought by the time anything
+  > can run, so all the guard can do is stop a bad answer being used as a good one.
+
+  directly under an example configured not to.
+
+  **The behaviour was correct throughout; only the documentation was wrong.**
+  Every example now shows `'throw'` — the default, and the one that fails the
+  call — except the streaming-only block on `earlyDocumentChecks`, where `'abort'`
+  is the right answer. A table in `docs/adapters.md` now sets the three actions
+  against streaming and non-streaming so the distinction cannot be picked up
+  wrongly again, and `test/openai.test.ts` pins all three on a non-streaming call
+  so the docs and the behaviour cannot drift apart.
+
+  Also documented: **`PROMPT_ECHO` abstains under 40 word tokens.** A short prompt
+  echoed perfectly scores 0.000, not 1.000 — the same abstain rule as everywhere
+  else, but the measured table in `docs/detectors.md` is taken from prompts past
+  that floor, so trying it by hand with a one-line prompt looked like a broken
+  detector.
+
 ## 1.11.2
 
 ### Patch Changes

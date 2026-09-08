@@ -183,7 +183,7 @@ const GUARDED: readonly GuardedPath[] = [{ path: ['messages', 'create'], surface
  *
  * const client = withOutputGuard(new Anthropic(), {
  *   ...presets.chat,
- *   onDegenerate: 'abort',
+ *   onDegenerate: 'throw',
  * });
  * ```
  *

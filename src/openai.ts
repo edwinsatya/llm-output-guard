@@ -279,7 +279,7 @@ const GUARDED: readonly GuardedPath[] = [
  *
  * const client = withOutputGuard(new OpenAI(), {
  *   ...presets.chat,
- *   onDegenerate: 'abort',
+ *   onDegenerate: 'throw',
  * });
  * ```
  *
