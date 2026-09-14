@@ -112,6 +112,98 @@ describe('the playground is self-contained', () => {
   });
 });
 
+/**
+ * `hidden` has to beat a class, and this is the only check that can tell.
+ *
+ * The page toggles containers with `el.hidden`, and three of them are laid out
+ * with `display: flex` from a class. The UA stylesheet's
+ * `[hidden] { display: none }` is lower specificity than a class rule, so
+ * setting `hidden` changed the property and **nothing on screen**: both
+ * specimen lists rendered in both modes, the turn strip followed you back into
+ * response mode, and the preset row stayed put in agent mode.
+ *
+ * Every test here passed while that was true, and would again: a DOM without
+ * layout reports `el.hidden === true` quite happily, and happy-dom's
+ * `getComputedStyle` returns `flex` for a hidden element either way. So the
+ * assertion cannot be about computed style -- it has to be about the rule whose
+ * absence caused it.
+ */
+describe('the playground can actually hide things', () => {
+  /*
+   * Comments stripped first. The rule this asserts is documented in a CSS
+   * comment right beside it, and that comment quotes the weaker form -- so a
+   * regex over the raw stylesheet matches the prose and reports the wrong
+   * thing. Third time this pattern has bitten in this repo; see
+   * `scripts-deps.test.ts`.
+   */
+  const css = () =>
+    (html.match(/<style>([\s\S]*?)<\/style>/)?.[1] ?? '').replace(/\/\*[\s\S]*?\*\//g, ' ');
+
+  it('carries a [hidden] rule that outranks a class', () => {
+    const rule = css().match(/\[hidden\]\s*{[^}]*}/)?.[0] ?? '';
+    expect(rule, 'no [hidden] rule in the page stylesheet').not.toBe('');
+    expect(rule.replace(/\s+/g, '')).toContain('display:none!important');
+  });
+
+  /*
+   * The reason the rule needs `!important` rather than mere presence: each of
+   * these is toggled with `hidden` *and* given a display by a class.
+   */
+  it('names every container it toggles, each of which a class gives a display', () => {
+    const stylesheet = css();
+    for (const selector of ['.chips', '.presets', '.turns']) {
+      const rule = stylesheet.match(new RegExp(`\\${selector}\\s*{[^}]*}`))?.[0] ?? '';
+      expect(rule, `${selector} not found`).not.toBe('');
+      expect(rule, `${selector} sets display, so [hidden] must be !important`).toContain('display:');
+    }
+  });
+
+  /**
+   * The readout must describe the mode you are in, and only that.
+   *
+   * The turn strip was built in agent mode and never emptied on the way back,
+   * so response mode rendered a run that was not on screen -- visible until
+   * `[hidden]` was given `!important`, and a latent wrong answer to "what is
+   * this page showing?" afterwards. Both modes are exercised twice here,
+   * because the leak only appears on the second visit.
+   */
+  it('never leaves one mode\'s readout in the other', () => {
+    const d = render();
+
+    for (const round of [1, 2]) {
+      d.querySelector('#mode-agent')!.click();
+      expect([...d.querySelectorAll('#turns .turn')].length, `round ${round}`).toBeGreaterThan(0);
+      expect([...d.querySelectorAll('.meter .code')].map((n) => n.textContent)).toEqual([
+        'AGENT_LOOP',
+      ]);
+
+      d.querySelector('#mode-response')!.click();
+      expect(
+        [...d.querySelectorAll('#turns .turn')],
+        `round ${round}: the turn strip followed us into response mode`,
+      ).toEqual([]);
+      expect([...d.querySelectorAll('.meter')].length).toBe(10);
+    }
+  });
+
+  it('toggles the property too, in both directions', () => {
+    const d = render();
+    expect(d.querySelector('#turns')?.hidden).toBe(true);
+    expect(d.querySelector('#presets')?.hidden).toBe(false);
+
+    d.querySelector('#mode-agent')!.click();
+    expect(d.querySelector('#turns')?.hidden).toBe(false);
+    expect(d.querySelector('#presets')?.hidden).toBe(true);
+    expect(d.querySelector('#chips-bad')?.hidden).toBe(true);
+    expect(d.querySelector('#chips-agent-bad')?.hidden).toBe(false);
+
+    d.querySelector('#mode-response')!.click();
+    expect(d.querySelector('#turns')?.hidden).toBe(true);
+    expect(d.querySelector('#chips-agent-bad')?.hidden).toBe(true);
+    expect(d.querySelector('#chips-bad')?.hidden).toBe(false);
+  });
+});
+
 describe('the playground actually runs', () => {
   it('renders both specimen groups', () => {
     expect(doc.querySelectorAll('#chips-bad .chip').length).toBeGreaterThan(0);

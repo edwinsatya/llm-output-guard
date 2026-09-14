@@ -270,6 +270,19 @@ const page = String.raw`<title>Degeneracy Bench</title>
     font-family: var(--mono); font-size: 10.5px; letter-spacing: .11em;
     text-transform: uppercase; color: var(--muted); margin-bottom: 8px; font-weight: 600;
   }
+  /*
+   * The hidden attribute has to beat a class, and without this rule it does
+   * not. A UA stylesheet's [hidden] { display: none } is lower specificity
+   * than .chips { display: flex }, so setting el.hidden on these containers
+   * changed the property and nothing on screen: both specimen lists rendered
+   * in both modes, the turn strip followed you back into response mode, and
+   * the preset row stayed put in agent mode.
+   *
+   * It passed every test too, because a DOM without layout reports
+   * el.hidden === true quite happily. playground.test.ts asserts this rule
+   * exists for that reason.
+   */
+  [hidden] { display: none !important; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip {
     font-family: var(--mono); font-size: 11.5px; padding: 5px 10px; border-radius: 999px;
@@ -617,6 +630,13 @@ function runResponse() {
   const text = $('input').value;
   const opts = presets[activePreset];
   const verdict = checkOutput(text, opts);
+
+  /* The turn strip belongs to the other mode. Emptied here for the same reason
+     the meters are emptied below -- a readout panel is owned by whichever mode
+     is drawing, and leaving the rows in place left this mode's DOM describing
+     a run that is not on screen. It was visible until [hidden] was given
+     !important, and a latent wrong answer to "what is the page showing?" after. */
+  $('turns').textContent = '';
 
   $('charcount').textContent = text.length.toLocaleString() + ' chars';
 
