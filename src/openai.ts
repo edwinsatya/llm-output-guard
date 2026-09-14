@@ -11,6 +11,7 @@
 import type { StreamGuardOptions } from './stream.js';
 import type { AdapterGuardOptions, DegenerateAction } from './internal/adapter-options.js';
 import type { GuardedPath, Surface } from './internal/proxy-guard.js';
+import type { EventReader } from './internal/event-stream-guard.js';
 import { guardClient } from './internal/proxy-guard.js';
 import { promptFromMessages, withSystem } from './internal/prompt-text.js';
 import type { AgentTurn } from './agent-types.js';
@@ -256,17 +257,61 @@ const RESPONSES: Surface = {
  * silence. A guard you believe in and do not have is the failure this package
  * was written about.
  *
- * **`responses.stream()` is deliberately absent.** It returns a `ResponseStream`
- * -- an event emitter with `.on()`, `.finalResponse()` and `.abort()`, not just
- * an async iterable -- and wrapping only its iteration would guard a `for await`
- * consumer while leaving `.finalResponse()` unchecked. That is the same
- * looks-guarded-but-is-not trap in a smaller box, so it is left plainly
- * unguarded and documented instead. Use `create({ stream: true })`, which is
- * guarded, or run `checkOutput` on `await stream.finalResponse()` yourself.
+ * **`responses.stream()` is guarded too, and needed a different mechanism.**
+ * It returns a `ResponseStream` -- an `EventStream`, readable six ways
+ * (`for await`, `finalResponse()`, `done()`, `on()`, `once()`/`emitted()`,
+ * `events()`) -- so replacing its iterator would have guarded one path and left
+ * five reading an unchecked stream. That is why it shipped unguarded until
+ * 1.12.0: half a guard on the SDK's current default streaming surface looks
+ * like coverage and is not.
+ *
+ * All six are fed by one event pump, so a single listener sees every delta
+ * however the caller reads, and `abort()` reaches the transport for all of
+ * them. Throwing is the part that cannot be universal: `for await`,
+ * `finalResponse()` and `done()` have an error channel, and a caller who only
+ * attached `on()` callbacks has nowhere to receive a throw -- they get the
+ * `onVerdict` report and a stream that stops. See
+ * `internal/event-stream-guard.ts`.
  */
+/**
+ * How to read a `responses.stream()` event stream.
+ *
+ * The event names rather than the chunk shapes, because an `EventStream`
+ * delivers each kind of event to its own listener -- so there is nothing to
+ * discriminate at read time. `internal/event-stream-guard.ts` holds the
+ * mechanism; this is the OpenAI half of it.
+ */
+const RESPONSES_EVENTS: EventReader = {
+  delta: {
+    event: 'response.output_text.delta',
+    read: (payload) => (payload as { delta?: string }).delta ?? '',
+  },
+  /*
+   * A tool call announces itself by the *item* being added, and `isToolCallItem`
+   * decides what counts -- the same deny-nothing rule the non-streaming path
+   * uses, so a tool type that ships next quarter does not read as prose.
+   */
+  toolCall: {
+    events: ['response.output_item.added'],
+    is: (payload) => isToolCallItem((payload as { item?: OutputItem }).item),
+  },
+  /*
+   * `response.incomplete` carries the stop reason that matters:
+   * `max_output_tokens` is already in `truncationScore`'s set of length stops.
+   * `response.completed` carries none, and passing `undefined` is right -- a
+   * completed response was not truncated.
+   */
+  terminal: {
+    events: ['response.completed', 'response.incomplete'],
+    finishReason: (payload) =>
+      (payload as { response?: ResponseLike }).response?.incomplete_details?.reason ?? undefined,
+  },
+};
+
 const GUARDED: readonly GuardedPath[] = [
   { path: ['chat', 'completions', 'create'], surface: CHAT_COMPLETIONS },
   { path: ['responses', 'create'], surface: RESPONSES },
+  { path: ['responses', 'stream'], surface: RESPONSES, eventStream: RESPONSES_EVENTS },
 ];
 
 /**

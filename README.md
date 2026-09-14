@@ -349,7 +349,7 @@ re-released as 0.5.0. The rule it broke is the one in the table above.
 - `PROMPT_ECHO` cannot tell a degenerate echo from a rewrite or translation — the difference is in what you asked for, not in the text.
 - `SCRIPT_MISMATCH` and `PROMPT_ECHO` do not run mid-stream by default: both measure a property of the whole response, and a mid-stream check reads a trailing window. `earlyDocumentChecks: true` opts in, with a measured false-positive risk — see **[docs/streaming.md](docs/streaming.md)**.
 - Tool *arguments* are measured only with `checkToolArguments: true`, non-streaming responses only.
-- `openai`'s `responses.stream()` helper is not wrapped; `create({ stream: true })` is.
+- `anthropic`'s `messages.stream()` helper is not wrapped; `create({ stream: true })` is. `openai`'s `responses.stream()` **is** — including `finalResponse()` and `done()` — but an `on()`-only consumer gets the report without an exception, because a callback has no error channel.
 - Truncation from a missing full stop is weak evidence, scored 0.55 and deliberately left below the defaults. Lower `maxTruncation` to ~0.5 to catch it, and expect false positives.
 - A JSON array of repeated identical records reads as a loop and fails from three records up. Set `redundancyScope: 'jsonValues'`.
 - `AGENT_LOOP` needs an *exact* cycle. An agent circling without repeating — `build`, read a file, `build`, read another, `build` — is **not** detected: the only signal that reads it scores that 0.444 against a healthy edit/test rhythm's 0.375, a margin too small to ship. Measured, rejected, and pinned by a test.

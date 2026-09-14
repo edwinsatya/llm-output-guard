@@ -24,6 +24,8 @@
 import type { Verdict } from '../types.js';
 import type { StreamGuardOptions } from '../stream.js';
 import type { AdapterGuardOptions } from './adapter-options.js';
+import type { EventReader, EventStreamLike } from './event-stream-guard.js';
+import { guardEventStream } from './event-stream-guard.js';
 import { checkOutput, DegenerateOutputError } from '../check.js';
 import { createStreamGuard } from '../stream.js';
 import { checkPreamble } from './tool-calls.js';
@@ -95,6 +97,16 @@ export interface GuardedPath {
   /** Property names from the client down to the method to wrap. */
   path: readonly string[];
   surface: Surface;
+  /**
+   * Present when the method returns an **event-emitter** stream synchronously
+   * rather than a promise -- `responses.stream()` rather than
+   * `responses.create()`.
+   *
+   * Such a stream can be read six ways, so replacing its iterator would guard
+   * one and leave five unchecked. `internal/event-stream-guard.ts` handles it
+   * with a listener instead, and this is how the event names reach it.
+   */
+  eventStream?: EventReader;
 }
 
 export interface ProxyGuardOptions extends StreamGuardOptions, AdapterGuardOptions {}
@@ -274,8 +286,9 @@ export function guardClient<T extends object>(
     });
   };
 
-  const wrapCreate = (create: (...args: unknown[]) => unknown, surface: Surface) =>
+  const wrapCreate = (create: (...args: unknown[]) => unknown, guardedPath: GuardedPath) =>
     function (this: unknown, ...args: unknown[]) {
+      const { surface } = guardedPath;
       /*
        * Before the call, because the handle has to be in the request that goes
        * out. A surface without `abortable` is not charged for this.
@@ -283,6 +296,25 @@ export function guardClient<T extends object>(
       const prepared = surface.abortable?.(args);
       const callArgs = prepared?.args ?? args;
       const result = create.apply(this, callArgs);
+
+      /*
+       * An event-emitter stream, handed back synchronously. Guarded by a
+       * listener rather than by wrapping iteration, because iteration is only
+       * one of the ways it can be read -- see `event-stream-guard.ts`.
+       */
+      if (
+        guardedPath.eventStream &&
+        result &&
+        typeof result === 'object' &&
+        typeof (result as EventStreamLike)[Symbol.asyncIterator] === 'function'
+      ) {
+        return guardEventStream(result as EventStreamLike, guardedPath.eventStream, {
+          ...optionsFor(surface, callArgs[0]),
+          onVerdict,
+          onDegenerate,
+        });
+      }
+
       if (!result || typeof (result as PromiseLike<unknown>).then !== 'function') return result;
 
       /*
@@ -361,12 +393,12 @@ export function guardClient<T extends object>(
 
         const terminal = matching.find((g) => g.path.length === 1);
         if (terminal && typeof value === 'function') {
-          return wrapCreate(value.bind(obj) as (...args: unknown[]) => unknown, terminal.surface);
+          return wrapCreate(value.bind(obj) as (...args: unknown[]) => unknown, terminal);
         }
 
         const deeper = matching
           .filter((g) => g.path.length > 1)
-          .map((g) => ({ path: g.path.slice(1), surface: g.surface }));
+          .map((g) => ({ ...g, path: g.path.slice(1) }));
         if (deeper.length === 0 || !value || typeof value !== 'object') {
           return typeof value === 'function' ? value.bind(obj) : value;
         }

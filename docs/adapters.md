@@ -101,13 +101,34 @@ is deliberately *not* read as truncation — a filtered response is a different
 failure, and reporting it as `TRUNCATED` would send a retry layer after the
 wrong fix.
 
-> **`responses.stream()` is not guarded.** It returns a `ResponseStream` — an
-> event emitter with `.on()` and `.finalResponse()`, not just an async iterable
-> — and wrapping only its iteration would guard a `for await` consumer while
-> leaving `.finalResponse()` unchecked. A guard you believe in and do not have
-> is the failure this package was written about, so it is left plainly
-> unguarded rather than half-wrapped. Use `create({ stream: true })`, which is
-> guarded, or run `checkOutput` on `await stream.finalResponse()` yourself.
+### `responses.stream()` needed a different mechanism
+
+It is guarded, and it was the last thing here that wasn't. A `ResponseStream` is
+an `EventStream`, and it can be read **six** ways:
+
+| path | detected | cancelled | throws |
+|---|---|---|---|
+| `for await (… of stream)` | yes | yes | yes |
+| `await stream.finalResponse()` | yes | yes | yes |
+| `await stream.done()` | yes | yes | yes |
+| `stream.on('…', cb)` | yes | yes | — |
+| `stream.once()` / `.emitted()` | yes | yes | — |
+| `stream.events('…')` | yes | yes | — |
+
+Replacing the iterator would have covered the first row and left five reading an
+unchecked stream, which is why this shipped unguarded until 1.12.0 — half a
+guard on the SDK's default streaming surface looks like coverage and is not.
+
+What makes it work is that all six are fed by one event pump, so **one listener
+sees every delta however you read it**, and `abort()` reaches the transport for
+all of them. Throwing is the part that cannot be universal: three paths have an
+error channel and three do not. A caller who only attached `on()` callbacks gets
+the `onVerdict` report and a stream that stops — which is the half that saves
+tokens — but no exception, because there is nowhere to put one.
+
+`onDegenerate: 'abort'` ends the iterator cleanly and keeps what arrived.
+`finalResponse()` and `done()` still reject under it, because there is no
+partial value either can honestly return.
 
 This is also how you guard **Groq, Together, OpenRouter, Fireworks, DeepInfra,
 vLLM and Ollama** — anything you reach through an OpenAI-compatible `baseURL`
