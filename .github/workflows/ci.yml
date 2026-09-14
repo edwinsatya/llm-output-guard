@@ -85,6 +85,19 @@ jobs:
       - run: npm ci
       - run: node scripts/check-peers.mjs ${{ matrix.peer }} ${{ matrix.version }}
 
+  type-resolution:
+    # Does a consumer's TypeScript find the subpath types? `moduleResolution:
+    # "node"` ignores the exports map, so every adapter once failed with TS2307
+    # while this repo and check-peers both typechecked under `bundler` and saw
+    # nothing. Needs no peer installed -- the subpaths are structurally typed.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: npm run check:resolution
+
   size-budget:
     # The README quotes a size on its front page. A number in prose goes stale
     # silently -- this one had drifted 24% before anything noticed -- so it is

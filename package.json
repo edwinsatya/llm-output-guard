@@ -1,6 +1,6 @@
 {
   "name": "llm-output-guard",
-  "version": "1.11.3",
+  "version": "1.11.4",
   "funding": {
     "type": "github",
     "url": "https://github.com/sponsors/edwinsatya"
@@ -123,6 +123,7 @@
     "measure:agent": "tsx scripts/measure-agent.ts",
     "pin:agent": "tsx scripts/pin-agent-fixtures.ts",
     "check:peers": "node scripts/check-peers.mjs",
+    "check:resolution": "node scripts/check-resolution.mjs",
     "seed": "node scripts/seed-fixtures.mjs",
     "provoke": "npm run build --silent && node scripts/generate-fixtures.mjs",
     "playground": "npm run build --silent && node scripts/build-playground.mjs",

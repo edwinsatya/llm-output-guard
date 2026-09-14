@@ -276,7 +276,7 @@ because only one of those is evidence.
 
 - **Zero runtime dependencies**, enforced in CI. Node ≥ 18; works on edge, browser, Deno, Bun.
 - **The size claim is a budget, not a memory.** `npm run size` bundles each entry, minifies and gzips it, and fails over budget — enforced in CI beside the zero-dependency check, because a number in prose is the cheapest thing in a repo to go stale.
-- **Types resolve on old and new TypeScript alike.** Every subpath is listed in `typesVersions` as well as `exports`, so `moduleResolution: "node"` — still the default under `module: commonjs` — sees the adapters instead of only the root.
+- **Types resolve on old and new TypeScript alike**, and it is checked rather than assumed. `npm run check:resolution` packs the tarball and typechecks every entry point under `node`, `node16`, `nodenext` and `bundler` on TypeScript 5 and 7 — enforced in CI. `moduleResolution: "node"` ignores the `exports` map, which is why `typesVersions` is there too.
 - **Pure and synchronous.** No network, no clock, no randomness — safe on a hot path, trivial to test.
 - **Scores, not booleans.** Detectors report 0–1 and leave the threshold decision to you.
 - **Abstains rather than guesses.** Samples too short to judge score 0.

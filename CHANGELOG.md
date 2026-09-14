@@ -1,5 +1,37 @@
 # llm-output-guard
 
+## 1.11.4
+
+### Patch Changes
+
+- `npm run check:resolution` — a consumer's TypeScript actually asked, rather than
+  assumed.
+
+  1.11.2 fixed subpath types failing under `moduleResolution: "node"`, and
+  defended the fix with a unit test that derives `typesVersions` from `exports`.
+  That catches the list drifting. It never asks TypeScript whether the types
+  resolve, which is the thing that broke.
+
+  So this packs the tarball, installs it into a bare consumer, and typechecks a
+  probe importing **every** entry point under `node`, `node16`, `nodenext` and
+  `bundler`. Verified by deleting `typesVersions`: node10 fails with TS2307 on
+  each adapter, and the script exits 1.
+
+  It needs **no peer installed at all**, which is the structural typing paying
+  off: each adapter subpath is typed against the shape of its SDK rather than
+  importing from it, so the whole surface typechecks with nothing beside it. That
+  is also why it is its own script rather than another dimension of
+  `check-peers.mjs` — resolution is a property of this package, identical for
+  every peer, so folding it into that matrix would repeat one answer seven times.
+
+  **Two compilers, because the failing mode no longer exists in both.**
+  TypeScript 7 removed `moduleResolution: "node"` outright — it errors TS5108
+  rather than resolving badly — so node10 can only be expressed on 5.x. That
+  bounds who was ever exposed to the original bug: consumers on TypeScript 5 and
+  earlier, who inherit `node` as the default under `module: commonjs` rather than
+  choosing it. 7.x is still exercised on the three modern modes, since what a new
+  consumer gets is the other half of the question.
+
 ## 1.11.3
 
 ### Patch Changes
