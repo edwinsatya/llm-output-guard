@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import * as root from '../src/index.js';
 import * as aiSdk from '../src/ai-sdk.js';
 import * as openai from '../src/openai.js';
@@ -129,6 +129,35 @@ describe('public surface', () => {
       './openai',
       './package.json',
     ]);
+  });
+
+  /**
+   * The docs ship with the package, and that is load-bearing rather than tidy.
+   *
+   * Measured while testing an agent skill: coding agents asked to wire this in
+   * got every detail right *because they read `docs/`* -- the adapters doc, the
+   * calibration doc, the agent-loops doc. Agents do read what is on disk.
+   *
+   * With `files: ["dist"]` none of that reached a consumer. They got types and
+   * a README, while the material that actually prevents the mistakes sat in a
+   * repo they had no copy of. Seventy-five kilobytes of markdown is a cheap
+   * price for the difference between an agent guessing and an agent reading.
+   *
+   * `docs/index.html` is deliberately excluded: it is the built playground for
+   * GitHub Pages, and 73 KB a consumer has no use for.
+   */
+  it('ships every docs markdown file, and not the built playground', () => {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    expect(pkg.files).toContain('docs/*.md');
+
+    const dir = new URL('../docs/', import.meta.url).pathname;
+    const markdown = readdirSync(dir).filter((f) => f.endsWith('.md'));
+    expect(markdown.length, 'docs/ has markdown to ship').toBeGreaterThan(4);
+
+    // A pattern, not a list, so a doc added later is included without an edit.
+    expect(pkg.files.some((f: string) => f === 'docs/*.md')).toBe(true);
+    expect(pkg.files).not.toContain('docs');
+    expect(pkg.files.join(' ')).not.toContain('index.html');
   });
 
   /**

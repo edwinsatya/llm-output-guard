@@ -109,7 +109,8 @@
     "llm-output-guard": "dist/bin.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "docs/*.md"
   ],
   "engines": {
     "node": ">=18"
